@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.par": "matlab",
+        "iostream": "cpp"
+    }
+}

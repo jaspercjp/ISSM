@@ -20,6 +20,7 @@ void LevelsetAnalysis::CreateConstraints(Constraints* constraints,IoModel* iomod
 	int         M,N;
 
 	/*Get finite element type for this analysis*/
+	cout << "[LevelsetAnalysis::CreateConstraints]: Finding md.levelset.fe" << endl;
 	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
 
 	/*First of, find the record for the enum, and get code  of data type: */
@@ -52,7 +53,14 @@ void LevelsetAnalysis::CreateLoads(Loads* loads, IoModel* iomodel){/*{{{*/
 }/*}}}*/
 void LevelsetAnalysis::CreateNodes(Nodes* nodes,IoModel* iomodel,bool isamr){/*{{{*/
 	int finiteelement;
-	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
+	// cout << "[LevelsetAnalysis::CreateNodes]: Finding md.levelset.fe" << endl;
+	if (!isamr)
+		iomodel->FindConstant(&finiteelement,"md.levelset.fe");
+	else 
+		// [TODO]: Somehow, using the buttress based cd law requires me to hard code finiteelement here...
+		// Otherwise, it returns an error IoModel.cpp could not find "md.levelset.fe"...
+		finiteelement = 985;
+	// cout << "[LevelsetAnalysis::CreateNodes]: md.levelset.fe=" << finiteelement << endl;
 	if(iomodel->domaintype!=Domain2DhorizontalEnum) iomodel->FetchData(2,"md.mesh.vertexonbase","md.mesh.vertexonsurface");
 	::CreateNodes(nodes,iomodel,LevelsetAnalysisEnum,finiteelement);
 	iomodel->DeleteData(2,"md.mesh.vertexonbase","md.mesh.vertexonsurface");
@@ -66,6 +74,7 @@ void LevelsetAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoModel*
 
 	/*Finite element type*/
 	int finiteelement;
+	// cout << "[UpdateElements]: FindingConstant" << endl;
 	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
 
 	/*Update elements: */
@@ -898,6 +907,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
 
+		// cout << "[LevelsetAnalysis::UpdateConstraints]: Removing Nodes to be calved..." << endl;
 		for(Object* & object : femmodel->elements->objects){
 			Element* element   = xDynamicCast<Element*>(object);
 			int      numnodes  = element->GetNumberOfNodes();
@@ -910,10 +920,17 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
 
 			/*First, look at ice front and figure out if any of the nodes will be calved*/
-			if(element->IsIcefront()){
+			// CHANGED 4/15/2025: Just remove every element that meets the calving criterion.
+			// CHANGED 4/21/2025: Prevent ice front elements from being removed 
+			if(!element->IsIcefront()){
 				for(int in=0;in<numnodes;in++){
 					gauss->GaussNode(element->GetElementType(),in);
 					Node* node=element->GetNode(in);
+					// cout << crevassedepth/thickness << endl;
+					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)) cout << "Calving predicted BEFORE CONDITIONAL." <<endl;
+					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)){
+					// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					// }
 					if(!node->IsActive()) continue;
 
 					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
@@ -921,9 +938,17 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					surface_crevasse_input->GetInputValue(&surface_crevasse,gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
 					surface_input->GetInputValue(&surface,gauss);
-
-					if((surface_crevasse>surface || crevassedepth>crevasse_threshold*thickness) && bed<0.){
-						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					
+					// if((surface_crevasse>surface || crevassedepth>(crevasse_threshold*thickness)-1e-6)) cout << "Calving predicted AFTER CONDITIONAL." <<endl;
+					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold 
+					// 	&& bed<0. 
+					// 	&& levelset<0. 
+					// 	&& constraint_nodes[node->Lid()]==0.)){
+					// 		vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					// }
+					// 
+					if(crevassedepth/thickness>=crevasse_threshold){
+							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 					}
 				}
 			}
@@ -934,67 +959,72 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		vec_constraint_nodes->Assemble();
       femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
 
-		int nflipped=1;
-		while(nflipped){
-			int local_nflipped=0;
-			for(Object* & object : femmodel->elements->objects){
-				Element* element  = xDynamicCast<Element*>(object);
-				int      numnodes = element->GetNumberOfNodes();
+		// int nflipped=1;
+		// while(nflipped){
+		// 	int local_nflipped=0;
+		// 	for(Object* & object : femmodel->elements->objects){
+		// 		Element* element  = xDynamicCast<Element*>(object);
+		// 		int      numnodes = element->GetNumberOfNodes();
 
-				Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
-				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
-				Input *bed_input              = element->GetInput(BedEnum);                    _assert_(bed_input);
-				Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
-				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
-				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
+		// 		Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
+		// 		Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
+		// 		Input *bed_input              = element->GetInput(BedEnum);                    _assert_(bed_input);
+		// 		Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
+		// 		Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
+		// 		Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
 
-				/*Is this element connected to a node that should be calved*/
-				bool isconnected = false;
-				for(int in=0;in<numnodes;in++){
-					Node* node=element->GetNode(in);
-					if(constraint_nodes[node->Lid()]>0.){
-						isconnected = true;
-						break;
-					}
-				}
+		// 		/*Is this element connected to a node that should be calved*/
+		// 		bool isconnected = false;
+		// 		for(int in=0;in<numnodes;in++){
+		// 			Node* node=element->GetNode(in);
+		// 			if(constraint_nodes[node->Lid()]>0.){
+		// 				isconnected = true;
+		// 				break;
+		// 			}
+		// 		}
 
-				/*Check status if connected*/
-				if(isconnected){
-					Gauss* gauss = element->NewGauss();
-					for(int in=0;in<numnodes;in++){
-						gauss->GaussNode(element->GetElementType(),in);
-						Node* node=element->GetNode(in);
-						levelset_input->GetInputValue(&levelset,gauss);
-						crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-						bed_input->GetInputValue(&bed,gauss);
-						surface_crevasse_input->GetInputValue(&surface_crevasse,gauss);
-						thickness_input->GetInputValue(&thickness,gauss);
-						surface_input->GetInputValue(&surface,gauss);
+		// 		/*Check status if connected*/
+		// 		if(isconnected){
+		// 			Gauss* gauss = element->NewGauss();
+		// 			for(int in=0;in<numnodes;in++){
+		// 				gauss->GaussNode(element->GetElementType(),in);
+		// 				Node* node=element->GetNode(in);
+		// 				levelset_input->GetInputValue(&levelset,gauss);
+		// 				crevassedepth_input->GetInputValue(&crevassedepth,gauss);
+		// 				bed_input->GetInputValue(&bed,gauss);
+		// 				surface_crevasse_input->GetInputValue(&surface_crevasse,gauss);
+		// 				thickness_input->GetInputValue(&thickness,gauss);
+		// 				surface_input->GetInputValue(&surface,gauss);
 
-                  /*FIXME: not sure about levelset<0. && fabs(levelset)>-mig_max*dt! SHould maybe be distance<mig_max*dt*/
-                  if((surface_crevasse>surface || crevassedepth>crevasse_threshold*thickness) && bed<0. && levelset<0. && levelset>-mig_max*dt && constraint_nodes[node->Lid()]==0.){
-							local_nflipped++;
-							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-						}
-					}
-					delete gauss;
-				}
-			}
+        //           /*FIXME: not sure about levelset<0. && fabs(levelset)>-mig_max*dt! SHould maybe be distance<mig_max*dt*/
+		// 				// if((surface_crevasse>surface || crevassedepth>(crevasse_threshold*thickness-1e-10)) && bed<0. && levelset<0. && levelset>-mig_max*dt && constraint_nodes[node->Lid()]==0.){
+		// 				// 	local_nflipped++;
+		// 				// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+		// 				// }
+		// 				if(crevassedepth/thickness>crevasse_threshold && levelset<0. && constraint_nodes[node->Lid()]==0.){
+		// 					local_nflipped++;
+		// 					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+		// 				}
+		// 			}
+					
+		// 			delete gauss;
+		// 		}
+		// 	}
 
-			/*Count how many new nodes were found*/
-			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-			_printf0_("Found "<<nflipped<<" to flip\n");
+		// 	/*Count how many new nodes were found*/
+		// 	ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
+		// 	// _printf0_("Found "<<nflipped<<" to flip\n");
 
-			/*Assemble and serialize flag vector*/
-			vec_constraint_nodes->Assemble();
-			xDelete<IssmDouble>(constraint_nodes);
-         femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
-		}
-
+		// 	/*Assemble and serialize flag vector*/
+		// 	vec_constraint_nodes->Assemble();
+		// 	xDelete<IssmDouble>(constraint_nodes);
+        //  femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
+		// }
+		// femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
 		/*Free resources:*/
 		delete vec_constraint_nodes;
 
-		/*Contrain the nodes that will be calved*/
+		/*Constrain the nodes that will be calved*/
 		for(Object* & object : femmodel->elements->objects){
 			Element* element  = xDynamicCast<Element*>(object);
 			int      numnodes = element->GetNumberOfNodes();
@@ -1006,7 +1036,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				if(!node->IsActive()) continue;
 
 				if(constraint_nodes[node->Lid()]>0.){
-					node->ApplyConstraint(0,+1.);
+					node->ApplyConstraint(0,+10.);
 				}
 				else {
 					/* no ice, set no spc */
