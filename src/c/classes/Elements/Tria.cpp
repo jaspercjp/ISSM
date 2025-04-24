@@ -494,7 +494,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 	IssmDouble  surface_crevasse[NUMVERTICES], basal_crevasse[NUMVERTICES], crevasse_depth[NUMVERTICES], H_surf, H_surfbasal;
 	// IssmDouble  kmax[NUMVERTICES];
 	IssmDouble  strainxx, strainxy, strainyy, strainmin, strainmax, strainparallel, straineffective,B,n;
-	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmax;
+	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmin;
 	int         crevasse_opening_stress;
     
     IssmDouble  xyz_list[NUMVERTICES][3];
@@ -540,7 +540,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 	::GetVerticesCoordinates(&xyz_list[0][0],vertices,NUMVERTICES);
 
 	/*Loop over all elements of this partition*/
-	GaussTria gauss; IssmDouble min_kmax=INFINITY;
+	GaussTria gauss; 
 	for (int iv=0;iv<NUMVERTICES;iv++){
 		gauss.GaussVertex(iv);
 
@@ -591,12 +591,13 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// else {
 			// 	vH = 0.5*B/thickness*pow(straineffective, (1.0/n)-1.0);
 			// }
-			// Kmax = 1.0 - 4.0*vH*(2*strainmin + strainmax)/(rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater);
-            Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			// CHANGED: 4/23/2025: Use Kmin instead of Kmax, which doesn't model the tensile cracks but compression instead.
+            // Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+            Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
 			// if (Kmax < 0.1) cout << Kmax;
 			// printf("Kmax=%.2f | emax=%.2e | emin=%.2e | vH=%.2e\n", Kmax, strainmax, strainmin, vH);
 			// if (Kmax<min_kmax) min_kmax=Kmax;
-			if (Kmax<0.) Kmax = 0.0;
+			if (Kmin<0.) Kmin = 0.0;
 			// kmax[iv] = Kmax;
 		}
 		else{
@@ -605,8 +606,8 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 		if(crevasse_opening_stress==2) {
 			/*Coffey 2024, Buttressing based */
-			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(Kmax));
-			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(Kmax));
+			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(Kmin));
+			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(Kmin));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
