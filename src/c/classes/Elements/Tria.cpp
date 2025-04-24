@@ -494,7 +494,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 	IssmDouble  surface_crevasse[NUMVERTICES], basal_crevasse[NUMVERTICES], crevasse_depth[NUMVERTICES], H_surf, H_surfbasal;
 	// IssmDouble  kmax[NUMVERTICES];
 	IssmDouble  strainxx, strainxy, strainyy, strainmin, strainmax, strainparallel, straineffective,B,n;
-	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmin;
+	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmin,Kmax,Kavg;
 	int         crevasse_opening_stress;
     
     IssmDouble  xyz_list[NUMVERTICES][3];
@@ -587,17 +587,22 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// straineffective = sqrt(strainxx*strainxx + strainyy*strainyy + strainxy*strainxy + strainxx*strainyy);
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
+			IssmDouble theta_v = atan2(vy,vx);
+			IssmDouble theta_1 = atan2(2*s_xy, s_xx-s_yy)/2;
+			IssmDouble proj_1 = abs(cos(theta_1-theta_v));
+			IssmDouble proj_2 = abs(cos(theta_1+PI/2 - theta_v));
 			// if (thickness<=0.) {cout<<"Negative Thickness."<<endl; vH = 1e14;}
 			// else {
 			// 	vH = 0.5*B/thickness*pow(straineffective, (1.0/n)-1.0);
 			// }
 			// CHANGED: 4/23/2025: Use Kmin instead of Kmax, which doesn't model the tensile cracks but compression instead.
-            // Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+            Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
             Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			Kavg = (proj_1*Kmin + proj_2*Kmax) / (proj_1 + proj_2);
 			// if (Kmax < 0.1) cout << Kmax;
 			// printf("Kmax=%.2f | emax=%.2e | emin=%.2e | vH=%.2e\n", Kmax, strainmax, strainmin, vH);
 			// if (Kmax<min_kmax) min_kmax=Kmax;
-			if (Kmin<0.) Kmin = 0.0;
+			if (Kavg<0.) Kavg = 0.0;
 			// kmax[iv] = Kmax;
 		}
 		else{
@@ -606,8 +611,8 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 		if(crevasse_opening_stress==2) {
 			/*Coffey 2024, Buttressing based */
-			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(Kmin));
-			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(Kmin));
+			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(Kavg));
+			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(Kavg));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
