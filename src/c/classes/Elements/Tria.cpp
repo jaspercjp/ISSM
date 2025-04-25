@@ -530,7 +530,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 	Input*	strainrateparallel_input  = this->GetInput(StrainRateparallelEnum);  _assert_(strainrateparallel_input);
 	Input*	strainrateeffective_input = this->GetInput(StrainRateeffectiveEnum); _assert_(strainrateeffective_input);
 	Input*	vx_input                  = this->GetInput(VxEnum); _assert_(vx_input);
-	Input*	vy_input                  = this->GetInput(VxEnum); _assert_(vy_input);
+	Input*	vy_input                  = this->GetInput(VyEnum); _assert_(vy_input);
 	Input*   waterheight_input       = this->GetInput(WaterheightEnum); _assert_(waterheight_input);
 	Input*   s_xx_input              = this->GetInput(DeviatoricStressxxEnum);     _assert_(s_xx_input);
 	Input*   s_xy_input              = this->GetInput(DeviatoricStressxyEnum);     _assert_(s_xy_input);
@@ -574,7 +574,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// CHANGED 4/15/2025: Strain rate calculations are wrong for some reason. Use stress instead.
             n_input->GetInputValue(&n,&gauss);
             B_input->GetInputValue(&B,&gauss);
-			// cout << "------------------------------------" << endl;
+			cout << "------------------------------------" << endl;
 			// Calculate principal and effective strain rates in the SSA approximation (extend to higher-order methods...?)
             // this->StrainRateSSA(&epsilon[0],&xyz_list[0][0],&gauss,vx_input,vy_input);
 			// IssmDouble EPSILON_SCALE = 1e-12;
@@ -589,8 +589,17 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble theta_v = atan2(vy,vx);
 			IssmDouble theta_1 = atan2(2*s_xy, s_xx-s_yy)/2;
+			printf("theta_v=%.2f | theta_1=%.2f \n", theta_v, theta_1);
+			// IssmDouble s1_dir_x = cos(theta_1); IssmDouble s1_dir_y = sin(theta_1);
+			// IssmDouble s2_dir_x = cos(theta_1+PI/2); IssmDouble s2_dir_y=sin(theta_1+PI/2);
+			// printf("s1_x=%.2f | s1_y=%.2f | s2_x=%.2f | s2_y=%.2f\n", s1_dir_x, s1_dir_y, s2_dir_x, s2_dir_y);
+			// IssmDouble u_dir = vx/sqrt(vx*vx+vy*vy); IssmDouble v_dir = vy/sqrt(vx*vx+vy*vy);
+			// printf("u_dir=%.2f | v_dir=%.2f \n", u_dir, v_dir);
 			IssmDouble proj_1 = abs(cos(theta_1-theta_v));
 			IssmDouble proj_2 = abs(cos(theta_1+PI/2 - theta_v));
+			// IssmDouble proj_1 = abs(u_dir*s1_dir_x + v_dir*s1_dir_y);
+			// IssmDouble proj_2 = abs(u_dir*s2_dir_x + v_dir*s2_dir_y);
+			printf("proj_1=%.2f | proj_2=%.2f\n", proj_1, proj_2);
 			// if (thickness<=0.) {cout<<"Negative Thickness."<<endl; vH = 1e14;}
 			// else {
 			// 	vH = 0.5*B/thickness*pow(straineffective, (1.0/n)-1.0);
@@ -599,6 +608,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
             Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
             Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
 			Kavg = (proj_1*Kmin + proj_2*Kmax) / (proj_1 + proj_2);
+			// Kavg=Kmin;
 			// if (Kmax < 0.1) cout << Kmax;
 			// printf("Kmax=%.2f | emax=%.2e | emin=%.2e | vH=%.2e\n", Kmax, strainmax, strainmin, vH);
 			// if (Kmax<min_kmax) min_kmax=Kmax;
