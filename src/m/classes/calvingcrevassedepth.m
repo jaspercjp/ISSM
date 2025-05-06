@@ -38,10 +38,10 @@ classdef calvingcrevassedepth
 		end % }}}
 		function md = checkconsistency(self,md,solution,analyses) % {{{
 			%Early return
+			disp("CHECKING CALVING CONSISTENCY!")
 			if (~strcmp(solution,'TransientSolution') | md.transient.ismovingfront==0), return; end
-
-			md = checkfield(md,'fieldname','calving.crevasse_opening_stress','numel',[1],'values',[0,1,2]);
-         md = checkfield(md,'fieldname','calving.crevasse_threshold','numel',[1],'>',0,'<=',1);
+			md = checkfield(md,'fieldname','calving.crevasse_opening_stress','numel',[1],'values',[0,1,2,3,4]);
+         	md = checkfield(md,'fieldname','calving.crevasse_threshold','numel',[1],'>',0,'<=',1);
 			md = checkfield(md,'fieldname','calving.water_height','NaN',1,'Inf',1,'timeseries',1,'>=',0);
 		end % }}}
 		function disp(self) % {{{

@@ -36,7 +36,7 @@ class calvingcrevassedepth(object):
         if solution != 'TransientSolution' or not md.transient.ismovingfront:
             return md
 
-        md = checkfield(md, 'fieldname', 'calving.crevasse_opening_stress', 'numel', [1], 'values', [0,1])
+        md = checkfield(md, 'fieldname', 'calving.crevasse_opening_stress', 'numel', [1], 'values', [0,1,2,3,4])
         md = checkfield(md, 'fieldname', 'calving.crevasse_threshold', 'numel', [1], '>', 0., '<=', 1.)
         md = checkfield(md, 'fieldname', 'calving.water_height', 'NaN', 1, 'Inf', 1, 'timeseries', 1, '>=', 0) 
 

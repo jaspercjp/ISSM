@@ -920,8 +920,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
 
 			/*First, look at ice front and figure out if any of the nodes will be calved*/
-			// CHANGED 4/15/2025: Just remove every element that meets the calving criterion.
-			// CHANGED 4/21/2025: Prevent ice front elements from being removed 
+			// CHANGED 4/15/2025: Just remove every element that meets the calving criterion. 
 			if(!element->IsIcefront()){
 				for(int in=0;in<numnodes;in++){
 					gauss->GaussNode(element->GetElementType(),in);
@@ -951,10 +950,9 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 					}
 				}
+				delete gauss;
 			}
-			delete gauss;
-		}
-
+	}
 		/*Assemble vector and serialize: */
 		vec_constraint_nodes->Assemble();
       femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);

@@ -494,7 +494,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 	IssmDouble  surface_crevasse[NUMVERTICES], basal_crevasse[NUMVERTICES], crevasse_depth[NUMVERTICES], H_surf, H_surfbasal;
 	// IssmDouble  kmax[NUMVERTICES];
 	IssmDouble  strainxx, strainxy, strainyy, strainmin, strainmax, strainparallel, straineffective,B,n;
-	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmin,Kmax,Kavg;
+	IssmDouble  s_xx,s_xy,s_yy,s1,s2,stmp,vH,Kmin,Kmax,K;
 	int         crevasse_opening_stress;
     
     IssmDouble  xyz_list[NUMVERTICES][3];
@@ -607,22 +607,37 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// CHANGED: 4/23/2025: Use Kmin instead of Kmax, which doesn't model the tensile cracks but compression instead.
             Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
             Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			Kavg = (proj_1*Kmin + proj_2*Kmax) / (proj_1 + proj_2);
+			K = (proj_1*Kmin + proj_2*Kmax) / (proj_1 + proj_2);
+			// if (taumin>0)
+			// 	Kavg=Kmax;
+			// else
+			// 	Kavg=Kmin;
 			// Kavg=Kmin;
 			// if (Kmax < 0.1) cout << Kmax;
 			// printf("Kmax=%.2f | emax=%.2e | emin=%.2e | vH=%.2e\n", Kmax, strainmax, strainmin, vH);
 			// if (Kmax<min_kmax) min_kmax=Kmax;
-			if (Kavg<0.) Kavg = 0.0;
 			// kmax[iv] = Kmax;
+		} 
+		else if (crevasse_opening_stress==3) {
+			// Apply 2D HFB crevasse depth approximation where appropriate
+			// FIX: Need to adapt to arbitrary ice shelf geometries later...
+			K = 1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+		} 
+		else if (crevasse_opening_stress==4) {
+			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
+			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
+            Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			K = Kmax;
 		}
 		else{
 			_error_("not supported");
 		}
 
-		if(crevasse_opening_stress==2) {
+		if(crevasse_opening_stress==2 || crevasse_opening_stress==3 || crevasse_opening_stress==4) {
 			/*Coffey 2024, Buttressing based */
-			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(Kavg));
-			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(Kavg));
+			if (K<0.) K = 0.0;
+			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
+			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(K));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
