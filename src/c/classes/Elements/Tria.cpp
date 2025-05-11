@@ -587,16 +587,16 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// straineffective = sqrt(strainxx*strainxx + strainyy*strainyy + strainxy*strainxy + strainxx*strainyy);
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-			IssmDouble theta_v = atan2(vy,vx);
-			IssmDouble theta_1 = atan2(2*s_xy, s_xx-s_yy)/2;
+			// IssmDouble theta_v = atan2(vy,vx);
+			// IssmDouble theta_1 = atan2(2*s_xy, s_xx-s_yy)/2;
 			// printf("theta_v=%.2f | theta_1=%.2f \n", theta_v, theta_1);
 			// IssmDouble s1_dir_x = cos(theta_1); IssmDouble s1_dir_y = sin(theta_1);
 			// IssmDouble s2_dir_x = cos(theta_1+PI/2); IssmDouble s2_dir_y=sin(theta_1+PI/2);
 			// printf("s1_x=%.2f | s1_y=%.2f | s2_x=%.2f | s2_y=%.2f\n", s1_dir_x, s1_dir_y, s2_dir_x, s2_dir_y);
 			// IssmDouble u_dir = vx/sqrt(vx*vx+vy*vy); IssmDouble v_dir = vy/sqrt(vx*vx+vy*vy);
 			// printf("u_dir=%.2f | v_dir=%.2f \n", u_dir, v_dir);
-			IssmDouble proj_1 = abs(cos(theta_1-theta_v));
-			IssmDouble proj_2 = abs(cos(theta_1+PI/2 - theta_v));
+			// IssmDouble proj_1 = abs(cos(theta_1-theta_v));
+			// IssmDouble proj_2 = abs(cos(theta_1+PI/2 - theta_v));
 			// IssmDouble proj_1 = abs(u_dir*s1_dir_x + v_dir*s1_dir_y);
 			// IssmDouble proj_2 = abs(u_dir*s2_dir_x + v_dir*s2_dir_y);
 			// printf("proj_1=%.2f | proj_2=%.2f\n", proj_1, proj_2);
@@ -606,8 +606,8 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// }
 			// CHANGED: 4/23/2025: Use Kmin instead of Kmax, which doesn't model the tensile cracks but compression instead.
             Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-            Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			K = (proj_1*Kmin + proj_2*Kmax) / (proj_1 + proj_2);
+            // Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			K = Kmax;
 			// if (taumin>0)
 			// 	Kavg=Kmax;
 			// else
@@ -621,7 +621,11 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 		else if (crevasse_opening_stress==3) {
 			// Apply 2D HFB crevasse depth approximation where appropriate
 			// FIX: Need to adapt to arbitrary ice shelf geometries later...
-			K = 1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			// IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
+			// if (taumin>=0.)
+			K=1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+
+				
 		} 
 		else if (crevasse_opening_stress==4) {
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
