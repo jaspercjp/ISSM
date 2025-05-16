@@ -137,6 +137,7 @@ syn keyword juliaConstC ConstantsYtsEnum
 syn keyword juliaConstC ControlInputSizeMEnum
 syn keyword juliaConstC ControlInputSizeNEnum
 syn keyword juliaConstC ControlInputInterpolationEnum
+syn keyword juliaConstC CrevasseDepthCalvingTimescaleEnum
 syn keyword juliaConstC CumBslcEnum
 syn keyword juliaConstC CumBslcIceEnum
 syn keyword juliaConstC CumBslcHydroEnum
@@ -338,6 +339,7 @@ syn keyword juliaConstC InversionTypeEnum
 syn keyword juliaConstC IoConstantEnum
 syn keyword juliaConstC IvinsEnum
 syn keyword juliaConstC IsSlcCouplingEnum
+syn keyword juliaConstC LastCalvingTimeEnum
 syn keyword juliaConstC LevelsetKillIcebergsEnum
 syn keyword juliaConstC LevelsetReinitFrequencyEnum
 syn keyword juliaConstC LevelsetStabilizationEnum
@@ -799,6 +801,7 @@ syn keyword juliaConstC BedSlopeXEnum
 syn keyword juliaConstC BedSlopeYEnum
 syn keyword juliaConstC BottomPressureEnum
 syn keyword juliaConstC BottomPressureOldEnum
+syn keyword juliaConstC ButtressingKEnum
 syn keyword juliaConstC CalvingBasinIdEnum
 syn keyword juliaConstC CalvingCalvingrateEnum
 syn keyword juliaConstC CalvingHabFractionEnum

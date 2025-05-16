@@ -133,6 +133,7 @@
 	ControlInputSizeMEnum
 	ControlInputSizeNEnum
 	ControlInputInterpolationEnum
+	CrevasseDepthCalvingTimescaleEnum
 	CumBslcEnum
 	CumBslcIceEnum
 	CumBslcHydroEnum
@@ -334,6 +335,7 @@
 	IoConstantEnum
 	IvinsEnum
 	IsSlcCouplingEnum
+	LastCalvingTimeEnum
 	LevelsetKillIcebergsEnum
 	LevelsetReinitFrequencyEnum
 	LevelsetStabilizationEnum
@@ -795,6 +797,7 @@
 	BedSlopeYEnum
 	BottomPressureEnum
 	BottomPressureOldEnum
+	ButtressingKEnum
 	CalvingBasinIdEnum
 	CalvingCalvingrateEnum
 	CalvingHabFractionEnum
@@ -3878,6 +3881,7 @@ function EnumToString(enum::IssmEnum)
 	if(enum==ControlInputSizeMEnum) return "ControlInputSizeM" end
 	if(enum==ControlInputSizeNEnum) return "ControlInputSizeN" end
 	if(enum==ControlInputInterpolationEnum) return "ControlInputInterpolation" end
+	if(enum==CrevasseDepthCalvingTimescaleEnum) return "CrevasseDepthCalvingTimescale" end
 	if(enum==CumBslcEnum) return "CumBslc" end
 	if(enum==CumBslcIceEnum) return "CumBslcIce" end
 	if(enum==CumBslcHydroEnum) return "CumBslcHydro" end
@@ -4079,6 +4083,7 @@ function EnumToString(enum::IssmEnum)
 	if(enum==IoConstantEnum) return "IoConstant" end
 	if(enum==IvinsEnum) return "Ivins" end
 	if(enum==IsSlcCouplingEnum) return "IsSlcCoupling" end
+	if(enum==LastCalvingTimeEnum) return "LastCalvingTime" end
 	if(enum==LevelsetKillIcebergsEnum) return "LevelsetKillIcebergs" end
 	if(enum==LevelsetReinitFrequencyEnum) return "LevelsetReinitFrequency" end
 	if(enum==LevelsetStabilizationEnum) return "LevelsetStabilization" end
@@ -4540,6 +4545,7 @@ function EnumToString(enum::IssmEnum)
 	if(enum==BedSlopeYEnum) return "BedSlopeY" end
 	if(enum==BottomPressureEnum) return "BottomPressure" end
 	if(enum==BottomPressureOldEnum) return "BottomPressureOld" end
+	if(enum==ButtressingKEnum) return "ButtressingK" end
 	if(enum==CalvingBasinIdEnum) return "CalvingBasinId" end
 	if(enum==CalvingCalvingrateEnum) return "CalvingCalvingrate" end
 	if(enum==CalvingHabFractionEnum) return "CalvingHabFraction" end
@@ -7623,6 +7629,7 @@ function StringToEnum(name::String)
 	if(name=="ControlInputSizeM") return ControlInputSizeMEnum  end
 	if(name=="ControlInputSizeN") return ControlInputSizeNEnum  end
 	if(name=="ControlInputInterpolation") return ControlInputInterpolationEnum  end
+	if(name=="CrevasseDepthCalvingTimescale") return CrevasseDepthCalvingTimescaleEnum  end
 	if(name=="CumBslc") return CumBslcEnum  end
 	if(name=="CumBslcIce") return CumBslcIceEnum  end
 	if(name=="CumBslcHydro") return CumBslcHydroEnum  end
@@ -7824,6 +7831,7 @@ function StringToEnum(name::String)
 	if(name=="IoConstant") return IoConstantEnum  end
 	if(name=="Ivins") return IvinsEnum  end
 	if(name=="IsSlcCoupling") return IsSlcCouplingEnum  end
+	if(name=="LastCalvingTime") return LastCalvingTimeEnum  end
 	if(name=="LevelsetKillIcebergs") return LevelsetKillIcebergsEnum  end
 	if(name=="LevelsetReinitFrequency") return LevelsetReinitFrequencyEnum  end
 	if(name=="LevelsetStabilization") return LevelsetStabilizationEnum  end
@@ -8285,6 +8293,7 @@ function StringToEnum(name::String)
 	if(name=="BedSlopeY") return BedSlopeYEnum  end
 	if(name=="BottomPressure") return BottomPressureEnum  end
 	if(name=="BottomPressureOld") return BottomPressureOldEnum  end
+	if(name=="ButtressingK") return ButtressingKEnum  end
 	if(name=="CalvingBasinId") return CalvingBasinIdEnum  end
 	if(name=="CalvingCalvingrate") return CalvingCalvingrateEnum  end
 	if(name=="CalvingHabFraction") return CalvingHabFractionEnum  end

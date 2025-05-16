@@ -8,6 +8,7 @@ classdef calvingcrevassedepth
 		crevasse_opening_stress=1;
 		crevasse_threshold     =1.;
 		water_height = 0.;
+		timescale=1.; 
 	end
 	methods
 		function self = calvingcrevassedepth(varargin) % {{{
@@ -32,9 +33,10 @@ classdef calvingcrevassedepth
 		end % }}}
 		function self = setdefaultparameters(self) % {{{
 			
-			crevasse_threshold      = 1.;
-			crevasse_opening_stress = 1;
-         self.water_height       = 0.;
+			self.crevasse_threshold      = 1.;
+			self.crevasse_opening_stress = 1;
+         	self.water_height       = 0.;
+			self.timescale			= 1.;
 		end % }}}
 		function md = checkconsistency(self,md,solution,analyses) % {{{
 			%Early return
@@ -49,13 +51,15 @@ classdef calvingcrevassedepth
 			fielddisplay(self,'crevasse_opening_stress','0: stress only in the ice-flow direction, 1: max principal, 2: buttressing based');
 			fielddisplay(self,'crevasse_threshold','ratio of full thickness to calve (e.g. 0.75 is for 75% of the total ice thickness)');
 			fielddisplay(self,'water_height','water height in the crevasse [m]');
+			fielddisplay(self,'timescale','how often to apply CD calving criterion [yr]. set to 0.0 or negative if want calving at every timestep.');
 
 		end % }}}
 		function marshall(self,prefix,md,fid) % {{{
 			yts=md.constants.yts;
 			WriteData(fid,prefix,'name','md.calving.law','data',6,'format','Integer');
 			WriteData(fid,prefix,'object',self,'fieldname','crevasse_opening_stress','format','Integer');
-         WriteData(fid,prefix,'object',self,'fieldname','crevasse_threshold','format','Double');
+         	WriteData(fid,prefix,'object',self,'fieldname','crevasse_threshold','format','Double');
+         	WriteData(fid,prefix,'object',self,'fieldname','timescale','format','Double');
 			WriteData(fid,prefix,'object',self,'fieldname','water_height','format','DoubleMat','mattype',1,'timeserieslength',md.mesh.numberofvertices+1,'yts',md.constants.yts);
 		end % }}}
 	end

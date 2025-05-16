@@ -146,6 +146,7 @@ const char* EnumToStringx(int en){
 		case ControlInputSizeMEnum : return "ControlInputSizeM";
 		case ControlInputSizeNEnum : return "ControlInputSizeN";
 		case ControlInputInterpolationEnum : return "ControlInputInterpolation";
+		case CrevasseDepthCalvingTimescaleEnum : return "CrevasseDepthCalvingTimescale";
 		case CumBslcEnum : return "CumBslc";
 		case CumBslcIceEnum : return "CumBslcIce";
 		case CumBslcHydroEnum : return "CumBslcHydro";
@@ -347,6 +348,7 @@ const char* EnumToStringx(int en){
 		case IoConstantEnum : return "IoConstant";
 		case IvinsEnum : return "Ivins";
 		case IsSlcCouplingEnum : return "IsSlcCoupling";
+		case LastCalvingTimeEnum : return "LastCalvingTime";
 		case LevelsetKillIcebergsEnum : return "LevelsetKillIcebergs";
 		case LevelsetReinitFrequencyEnum : return "LevelsetReinitFrequency";
 		case LevelsetStabilizationEnum : return "LevelsetStabilization";
@@ -808,6 +810,7 @@ const char* EnumToStringx(int en){
 		case BedSlopeYEnum : return "BedSlopeY";
 		case BottomPressureEnum : return "BottomPressure";
 		case BottomPressureOldEnum : return "BottomPressureOld";
+		case ButtressingKEnum : return "ButtressingK";
 		case CalvingBasinIdEnum : return "CalvingBasinId";
 		case CalvingCalvingrateEnum : return "CalvingCalvingrate";
 		case CalvingHabFractionEnum : return "CalvingHabFraction";

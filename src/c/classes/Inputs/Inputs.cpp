@@ -1013,7 +1013,10 @@ void Inputs::SetTriaInput(int enum_in,int interpolation,int row,int numindices,I
 	}
 
 	/*Set input*/
+
+	// cout<<"[Inputs::SetTriaInput] Calling DynamicCast"<<endl;
 	TriaInput* input = xDynamicCast<TriaInput*>(this->inputs[id]);
+	// cout<<"[Inputs::SetTriaInput] Calling SetInput"<<endl;
 	input->SetInput(interpolation,row,numindices,values);
 }/*}}}*/
 void Inputs::SetPentaControlInputGradient(int enum_in,int interpolation,int numindices,int* indices,IssmDouble* values){/*{{{*/

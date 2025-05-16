@@ -489,8 +489,9 @@ void       Tria::CalvingRateTest(){/*{{{*/
 void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 	IssmDouble  calvingrate[NUMVERTICES];
+	IssmDouble buttressing_k[NUMVERTICES];
 	IssmDouble  vx,vy;
-	IssmDouble  water_height, bed,Hab,thickness,surface;
+	IssmDouble  water_height, bed, Hab, thickness, surface;
 	IssmDouble  surface_crevasse[NUMVERTICES], basal_crevasse[NUMVERTICES], crevasse_depth[NUMVERTICES], H_surf, H_surfbasal;
 	// IssmDouble  kmax[NUMVERTICES];
 	IssmDouble  strainxx, strainxy, strainyy, strainmin, strainmax, strainparallel, straineffective,B,n;
@@ -501,18 +502,17 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
     IssmDouble  epsilon[3]; /* epsilon=[exx,eyy,exy];*/
 
 	/*reset if no ice in element*/
-	// cout << "Checking if ice is in the element" << endl;
 	if(!this->IsIceInElement()){
 		for(int i=0;i<NUMVERTICES;i++){
 			surface_crevasse[i] = 0.;
 			basal_crevasse[i] = 0.;
 			crevasse_depth[i] = 0.;
-			//kmax[i] = 0.;
+			buttressing_k[i] = 0.;
 		}
 		this->AddInput(SurfaceCrevasseEnum,&surface_crevasse[0],P1DGEnum);
 		this->AddInput(BasalCrevasseEnum,&basal_crevasse[0],P1DGEnum);
 		this->AddInput(CrevasseDepthEnum,&crevasse_depth[0],P1DGEnum);
-		// this->AddInput(KMaxEnum,&kmax[0],P1DGEnum);
+		this->AddInput(ButtressingKEnum,&buttressing_k[0],P1DGEnum);
 		return;
 	}
 
@@ -541,6 +541,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 	/*Loop over all elements of this partition*/
 	GaussTria gauss; 
+	// cout << "Computing HFB Calving!" << endl;
 	for (int iv=0;iv<NUMVERTICES;iv++){
 		gauss.GaussVertex(iv);
 
@@ -571,83 +572,38 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 		}
 		else if(crevasse_opening_stress==2){
 			/*Coffey 2024, Buttressing based */
-			// CHANGED 4/15/2025: Strain rate calculations are wrong for some reason. Use stress instead.
-            n_input->GetInputValue(&n,&gauss);
-            B_input->GetInputValue(&B,&gauss);
-			// cout << "------------------------------------" << endl;
-			// Calculate principal and effective strain rates in the SSA approximation (extend to higher-order methods...?)
-            // this->StrainRateSSA(&epsilon[0],&xyz_list[0][0],&gauss,vx_input,vy_input);
-			// IssmDouble EPSILON_SCALE = 1e-12;
-            // strainxx=epsilon[0];
-            // strainyy=epsilon[1];
-            // strainxy=epsilon[2];
-            // printf("exx=%.2e | exy=%.2e | eyy=%.2e\n", strainxx, strainxy, strainyy);
-            // strainmin = (strainxx + strainyy)/2  - sqrt((strainxx-strainyy)*(strainxx-strainyy)/4.0 + strainxy*strainxy);
-            // strainmax = (strainxx + strainyy)/2  + sqrt((strainxx-strainyy)*(strainxx-strainyy)/4.0 + strainxy*strainxy);
-			// straineffective = sqrt(strainxx*strainxx + strainyy*strainyy + strainxy*strainxy + strainxx*strainyy);
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-			// IssmDouble theta_v = atan2(vy,vx);
-			// IssmDouble theta_1 = atan2(2*s_xy, s_xx-s_yy)/2;
-			// printf("theta_v=%.2f | theta_1=%.2f \n", theta_v, theta_1);
-			// IssmDouble s1_dir_x = cos(theta_1); IssmDouble s1_dir_y = sin(theta_1);
-			// IssmDouble s2_dir_x = cos(theta_1+PI/2); IssmDouble s2_dir_y=sin(theta_1+PI/2);
-			// printf("s1_x=%.2f | s1_y=%.2f | s2_x=%.2f | s2_y=%.2f\n", s1_dir_x, s1_dir_y, s2_dir_x, s2_dir_y);
-			// IssmDouble u_dir = vx/sqrt(vx*vx+vy*vy); IssmDouble v_dir = vy/sqrt(vx*vx+vy*vy);
-			// printf("u_dir=%.2f | v_dir=%.2f \n", u_dir, v_dir);
-			// IssmDouble proj_1 = abs(cos(theta_1-theta_v));
-			// IssmDouble proj_2 = abs(cos(theta_1+PI/2 - theta_v));
-			// IssmDouble proj_1 = abs(u_dir*s1_dir_x + v_dir*s1_dir_y);
-			// IssmDouble proj_2 = abs(u_dir*s2_dir_x + v_dir*s2_dir_y);
-			// printf("proj_1=%.2f | proj_2=%.2f\n", proj_1, proj_2);
-			// if (thickness<=0.) {cout<<"Negative Thickness."<<endl; vH = 1e14;}
-			// else {
-			// 	vH = 0.5*B/thickness*pow(straineffective, (1.0/n)-1.0);
-			// }
-			// CHANGED: 4/23/2025: Use Kmin instead of Kmax, which doesn't model the tensile cracks but compression instead.
-            Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-            // Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			K = Kmax;
-			// if (taumin>0)
-			// 	Kavg=Kmax;
-			// else
-			// 	Kavg=Kmin;
-			// Kavg=Kmin;
-			// if (Kmax < 0.1) cout << Kmax;
-			// printf("Kmax=%.2f | emax=%.2e | emin=%.2e | vH=%.2e\n", Kmax, strainmax, strainmin, vH);
-			// if (Kmax<min_kmax) min_kmax=Kmax;
-			// kmax[iv] = Kmax;
+			Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			K=Kmax;
 		} 
 		else if (crevasse_opening_stress==3) {
-			// Apply 2D HFB crevasse depth approximation where appropriate
-			// FIX: Need to adapt to arbitrary ice shelf geometries later...
-			// IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-			// if (taumin>=0.)
-			K=1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-
-				
+			K=1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);			
 		} 
 		else if (crevasse_opening_stress==4) {
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-            Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			K = Kmax;
+            Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			if (taumin>0.)
+				K=Kmax;
+			else 
+				K=Kmin;
 		}
 		else{
-			_error_("not supported");
+			_error_("crevasse opening stress option not supported");
 		}
 
 		if(crevasse_opening_stress==2 || crevasse_opening_stress==3 || crevasse_opening_stress==4) {
 			/*Coffey 2024, Buttressing based */
+			// cout<<"Storing computed buttressing and crevasse depth variables"<<endl;
+			buttressing_k[iv]=K;
 			if (K<0.) K = 0.0;
 			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
 			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(K));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
-			/*Surface crevasse: sigma'_xx - rho_i g d + rho_fw g d_w = 0*/
-			surface_crevasse[iv] = 2*s1 / (rho_ice*constant_g) + (rho_freshwater/rho_ice)*water_height;
-
 			/*Basal crevasse: sigma'_xx - rho_i g (H-d) - rho_w g (b+d) = 0*/
 			if(bed>0.){
 				basal_crevasse[iv] = 0.;
@@ -664,11 +620,11 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 		/*Total crevasse depth (surface + basal)*/
 		crevasse_depth[iv]   = surface_crevasse[iv] + basal_crevasse[iv];
 	}
+
 	this->AddInput(SurfaceCrevasseEnum,&surface_crevasse[0],P1DGEnum);
 	this->AddInput(BasalCrevasseEnum,&basal_crevasse[0],P1DGEnum);
 	this->AddInput(CrevasseDepthEnum,&crevasse_depth[0],P1DGEnum);
-	// cout << "Setting kmax via AddInput." << endl;
-	// this->AddInput(KMaxEnum,&kmax[0],P1DGEnum);
+	this->AddInput(ButtressingKEnum,&buttressing_k[0],P1DGEnum);
 }
 /*}}}*/
 void       Tria::CalvingRateLevermann(){/*{{{*/

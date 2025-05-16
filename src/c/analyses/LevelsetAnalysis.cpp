@@ -20,7 +20,7 @@ void LevelsetAnalysis::CreateConstraints(Constraints* constraints,IoModel* iomod
 	int         M,N;
 
 	/*Get finite element type for this analysis*/
-	cout << "[LevelsetAnalysis::CreateConstraints]: Finding md.levelset.fe" << endl;
+	// cout << "[LevelsetAnalysis::CreateConstraints]: Finding md.levelset.fe" << endl;
 	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
 
 	/*First of, find the record for the enum, and get code  of data type: */
@@ -225,6 +225,9 @@ void LevelsetAnalysis::UpdateParameters(Parameters* parameters,IoModel* iomodel,
 		case CalvingCrevasseDepthEnum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_opening_stress",CalvingCrevasseDepthEnum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_threshold",CalvingCrevasseThresholdEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.calving.timescale",CrevasseDepthCalvingTimescaleEnum));  
+			// Initialize last calving time to 0  
+			parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));  
 			break;
 		case CalvingDev2Enum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.height_above_floatation",CalvingHeightAboveFloatationEnum));
@@ -824,6 +827,8 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 	/*Intermediaries*/
 	int  calvinglaw;
+	IssmDouble yts;
+	femmodel->parameters->FindParam(&yts, ConstantsYtsEnum);
 	femmodel->parameters->FindParam(&calvinglaw,CalvingLawEnum);
 	IssmDouble mig_max = femmodel->parameters->FindParam(MigrationMaxEnum);
 	IssmDouble dt      = femmodel->parameters->FindParam(TimesteppingTimeStepEnum);
@@ -891,23 +896,65 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		}
 	}
    else if(calvinglaw==CalvingCrevasseDepthEnum){
-
 		/*Intermediaries*/
-		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface;
+		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K;
+		IssmDouble max_distance = 0.0;
 		IssmDouble* constraint_nodes = NULL;
+		IssmDouble time; 
+		
+
+		femmodel->parameters->FindParam(&time, TimeEnum);
+		time = time / yts; // Convert from seconds to year
+		// Get last calving time and calving timescale  
+        IssmDouble last_calving_time = 0.0;  
+        IssmDouble calving_timescale = 0.0;  
+        if(femmodel->parameters->Exist(LastCalvingTimeEnum)){  
+            femmodel->parameters->FindParam(&last_calving_time,LastCalvingTimeEnum);  
+        }  else {
+			femmodel -> parameters -> AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
+		}
+        if(femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum)){  
+            femmodel->parameters->FindParam(&calving_timescale,CrevasseDepthCalvingTimescaleEnum);  
+        }
+		// cout << "Calving timescale= " << calving_timescale << endl;
+		
+
+		// Check if we should perform calving based on timescale
+        bool perform_calving = false;  
+		// cout << "Last Calving=" << last_calving_time << ", Current Time=" << time << endl;
+        if(calving_timescale <= 0.0)
+            // If timescale is 0 or negative, perform calving every timestep (original behavior)  
+            perform_calving = true;
+        else if(time - last_calving_time >= calving_timescale)
+			// If the calving timescale has elapsed, perform calving  
+            perform_calving = true;  
+		int step; femmodel->parameters->FindParam(&step,StepEnum);
+		// No calving on the first iteration (in the case that we are restarting the transient from another one)
+		if(step==1){
+			femmodel->parameters->SetParam(time, LastCalvingTimeEnum); 
+			return;
+		}
+		// Calve at regular intervals
+		if (!perform_calving) {
+			// cout << "No calving" << endl;
+			return;
+		}
+		
+		femmodel->parameters->SetParam(time, LastCalvingTimeEnum); 
+		// cout << "Time=" << time << ", Calving!" << endl;
 
 		/*Get the DistanceToCalvingfront*/
 		InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
 		femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0,DistanceToCalvingfrontEnum);
 
 		/*Vector of size number of nodes*/
-      int numnodes      = femmodel->nodes->NumberOfNodes();
-      int localmasters  = femmodel->nodes->NumberOfNodesLocal();
-      Vector<IssmDouble>* vec_constraint_nodes = vec_constraint_nodes=new Vector<IssmDouble>(localmasters,numnodes);
+		int numnodes      = femmodel->nodes->NumberOfNodes();
+		int localmasters  = femmodel->nodes->NumberOfNodesLocal();
+      	Vector<IssmDouble>* vec_constraint_nodes = vec_constraint_nodes=new Vector<IssmDouble>(localmasters,numnodes);
 
 		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
 
-		// cout << "[LevelsetAnalysis::UpdateConstraints]: Removing Nodes to be calved..." << endl;
+		/* Seek all calving front nodes */
 		for(Object* & object : femmodel->elements->objects){
 			Element* element   = xDynamicCast<Element*>(object);
 			int      numnodes  = element->GetNumberOfNodes();
@@ -918,13 +965,14 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum); _assert_(surface_crevasse_input);
 			Input*   thickness_input        = element->GetInput(ThicknessEnum); _assert_(thickness_input);
 			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
+			Input*   dis_input           = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
+			Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
 
-			/*First, look at ice front and figure out if any of the nodes will be calved*/
-			// CHANGED 4/15/2025: Just remove every element that meets the calving criterion. 
-			if(!element->IsIcefront()){
+			if(element->IsIcefront()){
 				for(int in=0;in<numnodes;in++){
 					gauss->GaussNode(element->GetElementType(),in);
 					Node* node=element->GetNode(in);
+					
 					// cout << crevassedepth/thickness << endl;
 					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)) cout << "Calving predicted BEFORE CONDITIONAL." <<endl;
 					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)){
@@ -933,92 +981,79 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					if(!node->IsActive()) continue;
 
 					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-					bed_input->GetInputValue(&bed,gauss);
-					surface_crevasse_input->GetInputValue(&surface_crevasse,gauss);
+					buttressing_k_input->GetInputValue(&K, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
-					surface_input->GetInputValue(&surface,gauss);
-					
-					// if((surface_crevasse>surface || crevassedepth>(crevasse_threshold*thickness)-1e-6)) cout << "Calving predicted AFTER CONDITIONAL." <<endl;
-					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold 
-					// 	&& bed<0. 
-					// 	&& levelset<0. 
-					// 	&& constraint_nodes[node->Lid()]==0.)){
-					// 		vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-					// }
-					// 
-					if(crevassedepth/thickness>=crevasse_threshold){
-							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-					}
+			
+					if (crevassedepth/thickness>=crevasse_threshold || K<=0.0)
+						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 				}
 				delete gauss;
 			}
 	}
 		/*Assemble vector and serialize: */
 		vec_constraint_nodes->Assemble();
-      femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
+		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
 
-		// int nflipped=1;
-		// while(nflipped){
-		// 	int local_nflipped=0;
-		// 	for(Object* & object : femmodel->elements->objects){
-		// 		Element* element  = xDynamicCast<Element*>(object);
-		// 		int      numnodes = element->GetNumberOfNodes();
+		/* Look for all nodes that are connected to calving front nodes */
+		int nflipped=1;
+		while(nflipped){
+			int local_nflipped=0;
+			for(Object* & object : femmodel->elements->objects){
+				Element* element  = xDynamicCast<Element*>(object);
+				int      numnodes = element->GetNumberOfNodes();
 
-		// 		Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
-		// 		Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
-		// 		Input *bed_input              = element->GetInput(BedEnum);                    _assert_(bed_input);
-		// 		Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
-		// 		Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
-		// 		Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
+				Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
+				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
+				Input *bed_input              = element->GetInput(BedEnum);                    _assert_(bed_input);
+				Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
+				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
+				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
+				Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
+				
+				// Ignore elements without ice
+				if (!element->IsIceInElement()) continue;
 
-		// 		/*Is this element connected to a node that should be calved*/
-		// 		bool isconnected = false;
-		// 		for(int in=0;in<numnodes;in++){
-		// 			Node* node=element->GetNode(in);
-		// 			if(constraint_nodes[node->Lid()]>0.){
-		// 				isconnected = true;
-		// 				break;
-		// 			}
-		// 		}
+				/*Is this element connected to a node that should be calved*/
+				bool isconnected = false;
+				for(int in=0;in<numnodes;in++){
+					Node* node=element->GetNode(in);
+					if(constraint_nodes[node->Lid()]>0.){
+						isconnected = true;
+						break;
+					}
+				}
 
-		// 		/*Check status if connected*/
-		// 		if(isconnected){
-		// 			Gauss* gauss = element->NewGauss();
-		// 			for(int in=0;in<numnodes;in++){
-		// 				gauss->GaussNode(element->GetElementType(),in);
-		// 				Node* node=element->GetNode(in);
-		// 				levelset_input->GetInputValue(&levelset,gauss);
-		// 				crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-		// 				bed_input->GetInputValue(&bed,gauss);
-		// 				surface_crevasse_input->GetInputValue(&surface_crevasse,gauss);
-		// 				thickness_input->GetInputValue(&thickness,gauss);
-		// 				surface_input->GetInputValue(&surface,gauss);
+				/*Check status if connected*/
+				if(isconnected){
+					Gauss* gauss = element->NewGauss();
+					for(int in=0;in<numnodes;in++){
+						gauss->GaussNode(element->GetElementType(),in);
+						Node* node=element->GetNode(in);
+						if (!node->IsActive()) continue; 
+						
+						crevassedepth_input->GetInputValue(&crevassedepth,gauss);
+						thickness_input->GetInputValue(&thickness,gauss);
+						buttressing_k_input->GetInputValue(&K,gauss);
 
-        //           /*FIXME: not sure about levelset<0. && fabs(levelset)>-mig_max*dt! SHould maybe be distance<mig_max*dt*/
-		// 				// if((surface_crevasse>surface || crevassedepth>(crevasse_threshold*thickness-1e-10)) && bed<0. && levelset<0. && levelset>-mig_max*dt && constraint_nodes[node->Lid()]==0.){
-		// 				// 	local_nflipped++;
-		// 				// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-		// 				// }
-		// 				if(crevassedepth/thickness>crevasse_threshold && levelset<0. && constraint_nodes[node->Lid()]==0.){
-		// 					local_nflipped++;
-		// 					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-		// 				}
-		// 			}
+						if((crevassedepth/thickness>crevasse_threshold|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
+							local_nflipped++;
+							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+						}
+					}
 					
-		// 			delete gauss;
-		// 		}
-		// 	}
+					delete gauss;
+				}
+			}
 
-		// 	/*Count how many new nodes were found*/
-		// 	ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-		// 	// _printf0_("Found "<<nflipped<<" to flip\n");
+			/*Count how many new nodes were found*/
+			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
+			// _printf0_("Found "<<nflipped<<" to flip\n");
 
-		// 	/*Assemble and serialize flag vector*/
-		// 	vec_constraint_nodes->Assemble();
-		// 	xDelete<IssmDouble>(constraint_nodes);
-        //  femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
-		// }
-		// femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
+			/*Assemble and serialize flag vector*/
+			vec_constraint_nodes->Assemble();
+			xDelete<IssmDouble>(constraint_nodes);
+			femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
+		}
 		/*Free resources:*/
 		delete vec_constraint_nodes;
 
@@ -1027,14 +1062,16 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Element* element  = xDynamicCast<Element*>(object);
 			int      numnodes = element->GetNumberOfNodes();
 			Gauss*   gauss    = element->NewGauss();
+
+			Input*   dis_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 			/*Potentially constrain nodes of this element*/
 			for(int in=0;in<numnodes;in++){
 				gauss->GaussNode(element->GetElementType(),in);
 				Node* node=element->GetNode(in);
 				if(!node->IsActive()) continue;
-
+				
 				if(constraint_nodes[node->Lid()]>0.){
-					node->ApplyConstraint(0,+10.);
+					node->ApplyConstraint(0,+1.);
 				}
 				else {
 					/* no ice, set no spc */
