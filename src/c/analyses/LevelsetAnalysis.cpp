@@ -59,7 +59,7 @@ void LevelsetAnalysis::CreateNodes(Nodes* nodes,IoModel* iomodel,bool isamr){/*{
 	else 
 		// [TODO]: Somehow, using the buttress based cd law requires me to hard code finiteelement here...
 		// Otherwise, it returns an error IoModel.cpp could not find "md.levelset.fe"...
-		finiteelement = 985;
+		finiteelement = P1Enum;
 	// cout << "[LevelsetAnalysis::CreateNodes]: md.levelset.fe=" << finiteelement << endl;
 	if(iomodel->domaintype!=Domain2DhorizontalEnum) iomodel->FetchData(2,"md.mesh.vertexonbase","md.mesh.vertexonsurface");
 	::CreateNodes(nodes,iomodel,LevelsetAnalysisEnum,finiteelement);
@@ -1030,7 +1030,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 						gauss->GaussNode(element->GetElementType(),in);
 						Node* node=element->GetNode(in);
 						if (!node->IsActive()) continue; 
-						
+
 						crevassedepth_input->GetInputValue(&crevassedepth,gauss);
 						thickness_input->GetInputValue(&thickness,gauss);
 						buttressing_k_input->GetInputValue(&K,gauss);
