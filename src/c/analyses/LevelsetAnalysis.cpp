@@ -984,7 +984,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					buttressing_k_input->GetInputValue(&K, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
 			
-					if (crevassedepth/thickness>=crevasse_threshold || K<=0.0)
+					if (crevassedepth/thickness>=crevasse_threshold-1e-5 || K<=0.0)
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 				}
 				delete gauss;
@@ -1035,7 +1035,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 						thickness_input->GetInputValue(&thickness,gauss);
 						buttressing_k_input->GetInputValue(&K,gauss);
 
-						if((crevassedepth/thickness>crevasse_threshold|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
+						if((crevassedepth/thickness>crevasse_threshold-1e-5|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
 							local_nflipped++;
 							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 						}
