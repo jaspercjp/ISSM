@@ -6,8 +6,11 @@ md=setmask(md,'','');
 md=parameterize(md,'../Par/SquareSheetConstrained.par');
 md.transient=deactivateall(md.transient);
 md.transient.ishydrology=1;
+md.transient.isstressbalance=1;
+md.transient.ismasstransport=1;
+md.transient.isgroundingline=1;
 md=setflowequation(md,'SSA','all');
-md.cluster=generic('name',oshostname(),'np',2);
+md.cluster=generic('name',oshostname(),'np',8);
 
 %Use hydrology coupled friction law
 md.friction=frictionshakti(md.friction);
@@ -37,7 +40,7 @@ md.initialization.vx = 10^-6*md.constants.yts*ones(md.mesh.numberofvertices,1);
 md.initialization.vy = zeros(md.mesh.numberofvertices,1);
 
 md.timestepping.time_step=3*3600/md.constants.yts;
-md.timestepping.final_time=.5/365;
+md.timestepping.final_time=1/365;
 md.materials.rheology_B(:)= (5e-25)^(-1/3);
 
 %Add one moulin and Neumann BC, varying in time
@@ -51,7 +54,7 @@ md.hydrology.neumannflux(end,:)=time;
 segx = md.mesh.x(md.mesh.segments(:,1)); segy=md.mesh.y(md.mesh.segments(:,1));
 pos = md.mesh.segments(find(segx<1 & segy>400 & segy<600),3);
 md.hydrology.neumannflux(pos,:)=repmat(0.05*(1-sin(2*pi/(1/365)*time)),numel(pos),1);
-
+md.verbose=verbose('solution',true);
 md=solve(md,'Transient');
 
 %Fields and tolerances to track changes

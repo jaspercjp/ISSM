@@ -578,17 +578,13 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			K=Kmax;
 		} 
 		else if (crevasse_opening_stress==3) {
+			/* This formulation is applicable only to idealized geometries where 
+				the y-direction is the longitudinal direction*/
 			K=1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);			
 		} 
 		else if (crevasse_opening_stress==4) {
-			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-            Kmin = 1.0 - 2.0*(taumin + 2*taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
-			if (taumin>0.)
-				K=Kmax;
-			else 
-				K=Kmin;
+			/* same as no.3, but for when x is the longitudinal direction */
+			K=1.0 - 2.0*(2.0*s_xx + s_yy) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);			
 		}
 		else{
 			_error_("crevasse opening stress option not supported");
@@ -596,9 +592,10 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 		if(crevasse_opening_stress==2 || crevasse_opening_stress==3 || crevasse_opening_stress==4) {
 			/*Coffey 2024, Buttressing based */
+			if (K<0.) K = 0.0;
 			// cout<<"Storing computed buttressing and crevasse depth variables"<<endl;
 			buttressing_k[iv]=K;
-			if (K<0.) K = 0.0;
+			// cout << "R " << 2.0*s_xx+s_yy << "| R_IT " << (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness)/2 << "| K " << K << endl;
 			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
 			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(K));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);

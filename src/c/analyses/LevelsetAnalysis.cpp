@@ -897,11 +897,11 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 	}
    else if(calvinglaw==CalvingCrevasseDepthEnum){
 		/*Intermediaries*/
-		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K;
+		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K, ocean_levelset;
 		IssmDouble max_distance = 0.0;
 		IssmDouble* constraint_nodes = NULL;
 		IssmDouble time; 
-		
+		IssmDouble THRESHOLD_K=1e-4;
 
 		femmodel->parameters->FindParam(&time, TimeEnum);
 		time = time / yts; // Convert from seconds to year
@@ -965,33 +965,37 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum); _assert_(surface_crevasse_input);
 			Input*   thickness_input        = element->GetInput(ThicknessEnum); _assert_(thickness_input);
 			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
-			Input*   dis_input           = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
-			Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
+			Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
+			Input*   buttressing_k_input    = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
+			Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
+			// Input* boundary_input 		    = element->GetInput(MeshVertexonboundaryEnum);  
 
 			if(element->IsIcefront()){
 				for(int in=0;in<numnodes;in++){
 					gauss->GaussNode(element->GetElementType(),in);
 					Node* node=element->GetNode(in);
 					
-					// cout << crevassedepth/thickness << endl;
-					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)) cout << "Calving predicted BEFORE CONDITIONAL." <<endl;
-					// if((surface_crevasse>surface || crevassedepth/thickness>crevasse_threshold-5e-1)){
-					// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-					// }
 					if(!node->IsActive()) continue;
+					
+					ocean_input->GetInputValue(&ocean_levelset, gauss);
+					if (ocean_levelset>=0.) continue;
+    				
 
 					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
 					buttressing_k_input->GetInputValue(&K, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
 			
-					if (crevassedepth/thickness>=crevasse_threshold-1e-5 || K<=0.0)
+					if (crevassedepth/thickness>=crevasse_threshold-1e-7)
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					// cout << "Ice Front ButtressingK " << K << endl;
+					// if (K<THRESHOLD_K)
+					// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 				}
 				delete gauss;
 			}
 	}
 		/*Assemble vector and serialize: */
-		vec_constraint_nodes->Assemble();
+		vec_constraint_nodes->Assemble(); // for parallelization
 		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
 
 		/* Look for all nodes that are connected to calving front nodes */
@@ -1009,10 +1013,10 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
 				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
 				Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
+				Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
 				
 				// Ignore elements without ice
 				if (!element->IsIceInElement()) continue;
-
 				/*Is this element connected to a node that should be calved*/
 				bool isconnected = false;
 				for(int in=0;in<numnodes;in++){
@@ -1030,12 +1034,20 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 						gauss->GaussNode(element->GetElementType(),in);
 						Node* node=element->GetNode(in);
 						if (!node->IsActive()) continue; 
+						ocean_input->GetInputValue(&ocean_levelset, gauss);
+						if (ocean_levelset>=0.) continue;
 
 						crevassedepth_input->GetInputValue(&crevassedepth,gauss);
 						thickness_input->GetInputValue(&thickness,gauss);
 						buttressing_k_input->GetInputValue(&K,gauss);
 
-						if((crevassedepth/thickness>crevasse_threshold-1e-5|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
+						// if((crevassedepth/thickness>crevasse_threshold-1e-5|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
+						// 	local_nflipped++;
+						// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+						// }
+						
+						// cout << "Search ButtressingK " << K << endl;
+						if((crevassedepth/thickness>crevasse_threshold-1e-7) && constraint_nodes[node->Lid()]==0.){
 							local_nflipped++;
 							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 						}
@@ -1046,6 +1058,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			}
 
 			/*Count how many new nodes were found*/
+			// propagate local variable to gloabl cpu
 			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
 			// _printf0_("Found "<<nflipped<<" to flip\n");
 
@@ -1058,6 +1071,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		delete vec_constraint_nodes;
 
 		/*Constrain the nodes that will be calved*/
+		// for current timestep only 
 		for(Object* & object : femmodel->elements->objects){
 			Element* element  = xDynamicCast<Element*>(object);
 			int      numnodes = element->GetNumberOfNodes();
