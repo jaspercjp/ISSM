@@ -953,6 +953,8 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
       	Vector<IssmDouble>* vec_constraint_nodes = vec_constraint_nodes=new Vector<IssmDouble>(localmasters,numnodes);
 
 		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
+		int ice_front_nodes=0;
+		int local_ice_front_nodes=0;
 
 		/* Seek all calving front nodes */
 		for(Object* & object : femmodel->elements->objects){
@@ -985,23 +987,31 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					buttressing_k_input->GetInputValue(&K, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
 			
-					if (crevassedepth/thickness>=crevasse_threshold-1e-7)
-						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					// if (crevassedepth/thickness>=crevasse_threshold)
+					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					if (crevassedepth/thickness>=crevasse_threshold)
+						local_ice_front_nodes+=1;
 					// cout << "Ice Front ButtressingK " << K << endl;
 					// if (K<THRESHOLD_K)
 					// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 				}
 				delete gauss;
 			}
-	}
+		}
+		ISSM_MPI_Allreduce(&local_ice_front_nodes,&ice_front_nodes,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
+
 		/*Assemble vector and serialize: */
 		vec_constraint_nodes->Assemble(); // for parallelization
 		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
 
 		/* Look for all nodes that are connected to calving front nodes */
 		int nflipped=1;
+		bool foundAny=0;
+		int total_propagated_nodes=0;
+
 		while(nflipped){
 			int local_nflipped=0;
+			bool local_foundAny=0;
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
 				int      numnodes = element->GetNumberOfNodes();
@@ -1047,10 +1057,11 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 						// }
 						
 						// cout << "Search ButtressingK " << K << endl;
-						if((crevassedepth/thickness>crevasse_threshold-1e-7) && constraint_nodes[node->Lid()]==0.){
-							local_nflipped++;
+						if((crevassedepth/thickness>crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
+							local_nflipped++; 
 							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 						}
+						// local_foundAny=(local_nflipped>0);
 					}
 					
 					delete gauss;
@@ -1059,9 +1070,13 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 			/*Count how many new nodes were found*/
 			// propagate local variable to gloabl cpu
+			// the code doesn't continue to next line until all the Allreduce calls have finished executing
 			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-			// _printf0_("Found "<<nflipped<<" to flip\n");
-
+			// ISSM_MPI_Allreduce(&local_foundAny,&foundAny, 1, ISSM_MPI_INT, ISSM_MPI_MAX, IssmComm::GetComm()); 
+			
+			// _printf0_("foundAny boolean is " << foundAny << "\n");
+			total_propagated_nodes+=nflipped;
+			// _printf0_("Found "<<nflipped<<" to flip, total="<<total_propagated_nodes<<".\n");
 			/*Assemble and serialize flag vector*/
 			vec_constraint_nodes->Assemble();
 			xDelete<IssmDouble>(constraint_nodes);
@@ -1070,29 +1085,38 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/*Free resources:*/
 		delete vec_constraint_nodes;
 
+		_printf0_("Crevasse Depth Calving:\n");
+		_printf0_("\tFound " << ice_front_nodes << " critical nodes at the ice front.\n");
+		_printf0_("\tPropagated " << total_propagated_nodes << " into ice interior.\n");
+		// _printf0_("\tfoundAny=" << foundAny << ".\n");
 		/*Constrain the nodes that will be calved*/
 		// for current timestep only 
-		for(Object* & object : femmodel->elements->objects){
-			Element* element  = xDynamicCast<Element*>(object);
-			int      numnodes = element->GetNumberOfNodes();
-			Gauss*   gauss    = element->NewGauss();
+		// only calve if nodes in addition to the ice front were found
+		if (total_propagated_nodes>0 && total_propagated_nodes>ice_front_nodes) {
+			for(Object* & object : femmodel->elements->objects){
+				Element* element  = xDynamicCast<Element*>(object);
+				int      numnodes = element->GetNumberOfNodes();
+				Gauss*   gauss    = element->NewGauss();
 
-			Input*   dis_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
-			/*Potentially constrain nodes of this element*/
-			for(int in=0;in<numnodes;in++){
-				gauss->GaussNode(element->GetElementType(),in);
-				Node* node=element->GetNode(in);
-				if(!node->IsActive()) continue;
-				
-				if(constraint_nodes[node->Lid()]>0.){
-					node->ApplyConstraint(0,+1.);
+				Input*   dis_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
+				/*Potentially constrain nodes of this element*/
+				for(int in=0;in<numnodes;in++){
+					gauss->GaussNode(element->GetElementType(),in);
+					Node* node=element->GetNode(in);
+					if(!node->IsActive()) continue;
+					
+					if(constraint_nodes[node->Lid()]>0.){
+						node->ApplyConstraint(0,+1.);
+					}
+					else {
+						/* no ice, set no spc */
+						node->DofInFSet(0);
+					}
 				}
-				else {
-					/* no ice, set no spc */
-					node->DofInFSet(0);
-				}
+				delete gauss;
 			}
-			delete gauss;
+		} else {
+			_printf0_("\tDid not execute calving.\n");
 		}
 		xDelete<IssmDouble>(constraint_nodes);
 	}
