@@ -117,6 +117,7 @@ enum definitions{
 	CalvingHeightAboveFloatationEnum,
 	CalvingLawEnum,
 	CalvingMinthicknessEnum,
+	CalvingOccurredEnum,
 	CalvingTestSpeedfactorEnum,
 	CalvingTestIndependentRateEnum,
 	CalvingUseParamEnum,

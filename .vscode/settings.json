@@ -2,6 +2,15 @@
     "files.associations": {
         "*.par": "matlab",
         "iostream": "cpp",
-        "new": "cpp"
+        "new": "cpp",
+        "filesystem": "cpp",
+        "array": "cpp",
+        "complex": "cpp",
+        "memory": "cpp",
+        "future": "cpp",
+        "istream": "cpp",
+        "locale": "cpp",
+        "variant": "cpp",
+        "__node_handle": "cpp"
     }
 }

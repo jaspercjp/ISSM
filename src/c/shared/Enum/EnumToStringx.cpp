@@ -125,6 +125,7 @@ const char* EnumToStringx(int en){
 		case CalvingHeightAboveFloatationEnum : return "CalvingHeightAboveFloatation";
 		case CalvingLawEnum : return "CalvingLaw";
 		case CalvingMinthicknessEnum : return "CalvingMinthickness";
+		case CalvingOccurredEnum : return "CalvingOccurred";
 		case CalvingTestSpeedfactorEnum : return "CalvingTestSpeedfactor";
 		case CalvingTestIndependentRateEnum : return "CalvingTestIndependentRate";
 		case CalvingUseParamEnum : return "CalvingUseParam";

@@ -225,9 +225,11 @@ void LevelsetAnalysis::UpdateParameters(Parameters* parameters,IoModel* iomodel,
 		case CalvingCrevasseDepthEnum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_opening_stress",CalvingCrevasseDepthEnum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_threshold",CalvingCrevasseThresholdEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.timescale",CrevasseDepthCalvingTimescaleEnum));  
-			// Initialize last calving time to 0  
-			parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));  
+			parameters->AddObject(iomodel->CopyConstantObject("md.calving.timescale",CrevasseDepthCalvingTimescaleEnum));
+			// Initialize last calving time to 0
+			parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
+			// Initialize calving occurred flag to 0
+			parameters->AddObject(new DoubleParam(CalvingOccurredEnum, 0.0));
 			break;
 		case CalvingDev2Enum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.height_above_floatation",CalvingHeightAboveFloatationEnum));
@@ -900,19 +902,26 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K, ocean_levelset;
 		IssmDouble max_distance = 0.0;
 		IssmDouble* constraint_nodes = NULL;
-		IssmDouble time; 
-		IssmDouble THRESHOLD_K=1e-4;
+		IssmDouble time, time_step; 
 
 		femmodel->parameters->FindParam(&time, TimeEnum);
+		femmodel->parameters->FindParam(&time_step, TimesteppingTimeStepEnum);
+
 		time = time / yts; // Convert from seconds to year
-		// Get last calving time and calving timescale  
+		time_step = time_step / yts;
+
+		// Get the last time the algorithm checked for calving 
         IssmDouble last_calving_time = 0.0;  
         IssmDouble calving_timescale = 0.0;  
+
+		// read the last calving time if it exists
         if(femmodel->parameters->Exist(LastCalvingTimeEnum)){  
             femmodel->parameters->FindParam(&last_calving_time,LastCalvingTimeEnum);  
         }  else {
 			femmodel -> parameters -> AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
 		}
+
+		// get the calving time scale 
         if(femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum)){  
             femmodel->parameters->FindParam(&calving_timescale,CrevasseDepthCalvingTimescaleEnum);  
         }
@@ -920,8 +929,11 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		
 
 		// Check if we should perform calving based on timescale
-        bool perform_calving = false;  
-		// cout << "Last Calving=" << last_calving_time << ", Current Time=" << time << endl;
+        bool perform_calving = false;
+		_printf0_("   Crevasse Depth Calving" << " (timescale=" << calving_timescale << "yrs)" << ":\n");  
+		_printf0_("\tlast check time=" << last_calving_time << " yr\n");
+		_printf0_("\tcurrent time=" << time << " yr\n");
+		_printf0_("\ttime step=" <<time_step<<" yr\n");
         if(calving_timescale <= 0.0)
             // If timescale is 0 or negative, perform calving every timestep (original behavior)  
             perform_calving = true;
@@ -931,17 +943,18 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		int step; femmodel->parameters->FindParam(&step,StepEnum);
 		// No calving on the first iteration (in the case that we are restarting the transient from another one)
 		if(step==1){
-			femmodel->parameters->SetParam(time, LastCalvingTimeEnum); 
+			femmodel->parameters->SetParam(time-time_step, LastCalvingTimeEnum); 
 			return;
 		}
-		// Calve at regular intervals
+
+		// Skip calving if the time isn't right yet
 		if (!perform_calving) {
 			// cout << "No calving" << endl;
 			return;
 		}
 		
-		femmodel->parameters->SetParam(time, LastCalvingTimeEnum); 
-		// cout << "Time=" << time << ", Calving!" << endl;
+		// Check for calving (doesn't necessarily happen) at regular intervals
+		femmodel->parameters->SetParam(time, LastCalvingTimeEnum);
 
 		/*Get the DistanceToCalvingfront*/
 		InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
@@ -953,10 +966,10 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
       	Vector<IssmDouble>* vec_constraint_nodes = vec_constraint_nodes=new Vector<IssmDouble>(localmasters,numnodes);
 
 		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
-		int ice_front_nodes=0;
-		int local_ice_front_nodes=0;
+		IssmDouble local_ice_front_area=0;
 
-		/* Seek all calving front nodes */
+		/* Find all elements that are on the ice front. Note that the element->IsIceFront function 
+			   only returns elements that has exactly one node without ice */
 		for(Object* & object : femmodel->elements->objects){
 			Element* element   = xDynamicCast<Element*>(object);
 			int      numnodes  = element->GetNumberOfNodes();
@@ -970,7 +983,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 			Input*   buttressing_k_input    = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
 			Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
-			// Input* boundary_input 		    = element->GetInput(MeshVertexonboundaryEnum);  
+			Input* boundary_input 		    = element->GetInput(MeshVertexonboundaryEnum);  
 
 			if(element->IsIcefront()){
 				for(int in=0;in<numnodes;in++){
@@ -979,26 +992,31 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					
 					if(!node->IsActive()) continue;
 					
+					// Only process floating nodes 
 					ocean_input->GetInputValue(&ocean_levelset, gauss);
-					if (ocean_levelset>=0.) continue;
-    				
-
 					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-					buttressing_k_input->GetInputValue(&K, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
-			
-					// if (crevassedepth/thickness>=crevasse_threshold)
-					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-					if (crevassedepth/thickness>=crevasse_threshold)
-						local_ice_front_nodes+=1;
-					// cout << "Ice Front ButtressingK " << K << endl;
-					// if (K<THRESHOLD_K)
-					// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					if (ocean_levelset>=0.) continue;
+					
+					// mark the node as one to be potentially calved 
+					if(crevassedepth/thickness>=crevasse_threshold){
+						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+					}
 				}
 				delete gauss;
+				
+				/* Include element in ice front area calculation regardless of its stress value */
+				IssmDouble x1 = element->vertices[0]->x;
+				IssmDouble y1 = element->vertices[0]->y;
+				IssmDouble x2 = element->vertices[1]->x;
+				IssmDouble y2 = element->vertices[1]->y;
+				IssmDouble x3 = element->vertices[2]->x;
+				IssmDouble y3 = element->vertices[2]->y;
+				local_ice_front_area += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
 			}
 		}
-		ISSM_MPI_Allreduce(&local_ice_front_nodes,&ice_front_nodes,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
+		IssmDouble ice_front_area;
+		ISSM_MPI_Allreduce(&local_ice_front_area,&ice_front_area,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
 
 		/*Assemble vector and serialize: */
 		vec_constraint_nodes->Assemble(); // for parallelization
@@ -1006,12 +1024,17 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		/* Look for all nodes that are connected to calving front nodes */
 		int nflipped=1;
-		bool foundAny=0;
-		int total_propagated_nodes=0;
+
+		IssmDouble aflipped = 0.0;
+		IssmDouble total_aflipped = 0.0;
+
+		IssmDouble local_min_x = 1e20;  // Large initial value
+		IssmDouble global_min_x=1e20;
 
 		while(nflipped){
+			IssmDouble local_aflipped=0.0; // Area of all elements flipped
 			int local_nflipped=0;
-			bool local_foundAny=0;
+
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
 				int      numnodes = element->GetNumberOfNodes();
@@ -1027,7 +1050,17 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				
 				// Ignore elements without ice
 				if (!element->IsIceInElement()) continue;
-				/*Is this element connected to a node that should be calved*/
+
+				/* Skip elements on the ice front */
+				IssmDouble ls[3]; 
+				element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+				int nrice = 0;
+				for(int i = 0; i < 3; i++) {
+					if(ls[i] < 0.) nrice++;
+				}
+				if (nrice < 3) continue; 
+				
+				/* Is this element connected to a node that should be calved? */
 				bool isconnected = false;
 				for(int in=0;in<numnodes;in++){
 					Node* node=element->GetNode(in);
@@ -1036,47 +1069,57 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 						break;
 					}
 				}
+				if (!isconnected) continue; 
 
-				/*Check status if connected*/
-				if(isconnected){
-					Gauss* gauss = element->NewGauss();
-					for(int in=0;in<numnodes;in++){
-						gauss->GaussNode(element->GetElementType(),in);
-						Node* node=element->GetNode(in);
-						if (!node->IsActive()) continue; 
-						ocean_input->GetInputValue(&ocean_levelset, gauss);
-						if (ocean_levelset>=0.) continue;
+				/* Check stress if connected */
+				Gauss* gauss = element->NewGauss();
+				bool is_critical=false;
+				for(int in=0;in<numnodes;in++){
+					gauss->GaussNode(element->GetElementType(),in);
+					Node* node=element->GetNode(in);
+					if (!node->IsActive()) continue; 
+					ocean_input->GetInputValue(&ocean_levelset, gauss);
+					if (ocean_levelset>=0.) continue;
 
-						crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-						thickness_input->GetInputValue(&thickness,gauss);
-						buttressing_k_input->GetInputValue(&K,gauss);
-
-						// if((crevassedepth/thickness>crevasse_threshold-1e-5|| K<=0.0) && constraint_nodes[node->Lid()]==0.){
-						// 	local_nflipped++;
-						// 	vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-						// }
-						
-						// cout << "Search ButtressingK " << K << endl;
-						if((crevassedepth/thickness>crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
-							local_nflipped++; 
-							vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-						}
-						// local_foundAny=(local_nflipped>0);
-					}
+					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
+					thickness_input->GetInputValue(&thickness,gauss);
 					
-					delete gauss;
+					/* locate elements where all three nodes are beyond critical calving stress */ 
+					if((crevassedepth/thickness>=crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
+						// _printf0_("\tFound critical node at cd " << crevassedepth/thickness << ".\n");
+						is_critical=true;
+						local_nflipped++; 
+						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+						if (element->vertices[in]->x < local_min_x) local_min_x = element->vertices[in]->x;
+					} 
+					// else {
+					// 	is_critical = false && is_critical;
+					// }
 				}
+
+				/* Calculate area of element above critical stress */ 
+				if (is_critical) {
+					IssmDouble x1 = element->vertices[0]->x;
+					IssmDouble y1 = element->vertices[0]->y;
+					IssmDouble x2 = element->vertices[1]->x;
+					IssmDouble y2 = element->vertices[1]->y;
+					IssmDouble x3 = element->vertices[2]->x;
+					IssmDouble y3 = element->vertices[2]->y;
+					local_aflipped += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
+				}
+
+				delete gauss;
 			}
 
 			/*Count how many new nodes were found*/
 			// propagate local variable to gloabl cpu
 			// the code doesn't continue to next line until all the Allreduce calls have finished executing
 			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-			// ISSM_MPI_Allreduce(&local_foundAny,&foundAny, 1, ISSM_MPI_INT, ISSM_MPI_MAX, IssmComm::GetComm()); 
+			ISSM_MPI_Allreduce(&local_aflipped,&aflipped,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm()); 
+			ISSM_MPI_Allreduce(&local_min_x, &global_min_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
 			
-			// _printf0_("foundAny boolean is " << foundAny << "\n");
-			total_propagated_nodes+=nflipped;
-			// _printf0_("Found "<<nflipped<<" to flip, total="<<total_propagated_nodes<<".\n");
+			total_aflipped += aflipped;
+			
 			/*Assemble and serialize flag vector*/
 			vec_constraint_nodes->Assemble();
 			xDelete<IssmDouble>(constraint_nodes);
@@ -1085,27 +1128,42 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/*Free resources:*/
 		delete vec_constraint_nodes;
 
-		_printf0_("Crevasse Depth Calving:\n");
-		_printf0_("\tFound " << ice_front_nodes << " critical nodes at the ice front.\n");
-		_printf0_("\tPropagated " << total_propagated_nodes << " into ice interior.\n");
-		// _printf0_("\tfoundAny=" << foundAny << ".\n");
-		/*Constrain the nodes that will be calved*/
-		// for current timestep only 
-		// only calve if nodes in addition to the ice front were found
-		if (total_propagated_nodes>0 && total_propagated_nodes>ice_front_nodes) {
+		_printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
+		_printf0_("\tPropagated " << total_aflipped/1e6 << " km^2 into ice interior.\n");
+		_printf0_("\tMin x coord = " << global_min_x/1000 << "km.\n");
+
+		/* the constraint is for current timestep only */
+		if (total_aflipped>=1.0*ice_front_area) {
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
 				int      numnodes = element->GetNumberOfNodes();
 				Gauss*   gauss    = element->NewGauss();
+				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
+				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
 
-				Input*   dis_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 				/*Potentially constrain nodes of this element*/
 				for(int in=0;in<numnodes;in++){
 					gauss->GaussNode(element->GetElementType(),in);
 					Node* node=element->GetNode(in);
 					if(!node->IsActive()) continue;
+
+					/* skip elements on the ice front */
+					// IssmDouble ls[3]; 
+					// element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+					// int nrice = 0;
+					// for(int i = 0; i < 3; i++) {
+					// 	if(ls[i] < 0.) nrice++;
+					// }
+					// if (nrice < 3) continue; 
+
+					// crevassedepth_input->GetInputValue(&crevassedepth,gauss);
+					// thickness_input->GetInputValue(&thickness,gauss);
+					// if((crevassedepth/thickness>crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
 					
-					if(constraint_nodes[node->Lid()]>0.){
+					int vertex_index = in;
+					if (element->vertices[vertex_index]->x >= global_min_x) {
+					// if(constraint_nodes[node->Lid()]>0.){
+					// if(crevassedepth/thickness>crevasse_threshold){
 						node->ApplyConstraint(0,+1.);
 					}
 					else {
@@ -1115,7 +1173,12 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				}
 				delete gauss;
 			}
+			// Set flag to trigger AMR
+			femmodel->parameters->SetParam(1.0, CalvingOccurredEnum);
+			_printf0_("\tExecuted calving.\n");
 		} else {
+			// Reset flag - no calving this timestep
+			femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
 			_printf0_("\tDid not execute calving.\n");
 		}
 		xDelete<IssmDouble>(constraint_nodes);
