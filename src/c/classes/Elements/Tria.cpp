@@ -625,8 +625,8 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// cout<<"Storing computed buttressing and crevasse depth variables"<<endl;
 			buttressing_k[iv]=K;
 			// cout << "R " << 2.0*s_xx+s_yy << "| R_IT " << (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness)/2 << "| K " << K << endl;
-			surface_crevasse[iv] = thickness*(1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
-			basal_crevasse[iv] = thickness*(rho_ice/rho_seawater)*(1.0-sqrt(K));
+			surface_crevasse[iv] = (1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
+			basal_crevasse[iv] = (rho_ice/rho_seawater)*(1.0-sqrt(K));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
@@ -644,7 +644,7 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 		if (surface_crevasse[iv]<0.) surface_crevasse[iv]=0.;
 		if (basal_crevasse[iv]<0.) basal_crevasse[iv]=0.;
 		/*Total crevasse depth (surface + basal)*/
-		crevasse_depth[iv]   = surface_crevasse[iv] + basal_crevasse[iv];
+		crevasse_depth[iv]   = 1 - sqrt(K);
 	}
 
 	this->AddInput(SurfaceCrevasseEnum,&surface_crevasse[0],P1DGEnum);

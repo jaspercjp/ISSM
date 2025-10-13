@@ -125,6 +125,7 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"CalvingHeightAboveFloatation")==0) return CalvingHeightAboveFloatationEnum;
 	      else if (strcmp(name,"CalvingLaw")==0) return CalvingLawEnum;
 	      else if (strcmp(name,"CalvingMinthickness")==0) return CalvingMinthicknessEnum;
+	      else if (strcmp(name,"CalvingPropagatedArea")==0) return CalvingPropagatedAreaEnum;
 	      else if (strcmp(name,"CalvingTestSpeedfactor")==0) return CalvingTestSpeedfactorEnum;
 	      else if (strcmp(name,"CalvingTestIndependentRate")==0) return CalvingTestIndependentRateEnum;
 	      else if (strcmp(name,"CalvingUseParam")==0) return CalvingUseParamEnum;

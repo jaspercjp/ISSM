@@ -230,6 +230,8 @@ void LevelsetAnalysis::UpdateParameters(Parameters* parameters,IoModel* iomodel,
 			parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
 			// Initialize calving occurred flag to 0
 			parameters->AddObject(new DoubleParam(CalvingOccurredEnum, 0.0));
+			// Initialize propagated calving area to 0
+			parameters->AddObject(new DoubleParam(CalvingPropagatedAreaEnum, 0.0));
 			break;
 		case CalvingDev2Enum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.calving.height_above_floatation",CalvingHeightAboveFloatationEnum));
@@ -967,7 +969,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
 		IssmDouble local_ice_front_area=0;
-
+		IssmDouble local_ice_front_x=0;
 		/* Find all elements that are on the ice front. Note that the element->IsIceFront function 
 			   only returns elements that has exactly one node without ice */
 		for(Object* & object : femmodel->elements->objects){
@@ -999,9 +1001,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					if (ocean_levelset>=0.) continue;
 					
 					// mark the node as one to be potentially calved 
-					if(crevassedepth/thickness>=crevasse_threshold){
-						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-					}
+					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 				}
 				delete gauss;
 				
@@ -1013,11 +1013,13 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				IssmDouble x3 = element->vertices[2]->x;
 				IssmDouble y3 = element->vertices[2]->y;
 				local_ice_front_area += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
+				local_ice_front_x=fmax(fmax(x1,x2),x3);
 			}
 		}
 		IssmDouble ice_front_area;
 		ISSM_MPI_Allreduce(&local_ice_front_area,&ice_front_area,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
-
+		IssmDouble ice_front_x; 
+		ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MAX, IssmComm::GetComm());
 		/*Assemble vector and serialize: */
 		vec_constraint_nodes->Assemble(); // for parallelization
 		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
@@ -1025,8 +1027,8 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/* Look for all nodes that are connected to calving front nodes */
 		int nflipped=1;
 
-		IssmDouble aflipped = 0.0;
-		IssmDouble total_aflipped = 0.0;
+		// IssmDouble aflipped = 0.0;
+		// IssmDouble total_aflipped = 0.0;
 
 		IssmDouble local_min_x = 1e20;  // Large initial value
 		IssmDouble global_min_x=1e20;
@@ -1084,29 +1086,19 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
 					
-					/* locate elements where all three nodes are beyond critical calving stress */ 
-					if((crevassedepth/thickness>=crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
-						// _printf0_("\tFound critical node at cd " << crevassedepth/thickness << ".\n");
-						is_critical=true;
+					/* mark the node for calving if it is beyond critical calving stress */ 
+					if((crevassedepth>=crevasse_threshold) && constraint_nodes[node->Lid()]==0.){
+						_printf0_("\tx=" << element->vertices[in]->x/1000 << "km, y="<<element->vertices[in]->y/1000 << "km.\n");
+						_printf0_("\tCD=" << crevassedepth << "m, H="<<thickness << "m.\n");
+						_printf0_("\tFound critical node at cd " << crevassedepth << ".\n");
+						// is_critical=true;
 						local_nflipped++; 
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 						if (element->vertices[in]->x < local_min_x) local_min_x = element->vertices[in]->x;
 					} 
-					// else {
-					// 	is_critical = false && is_critical;
-					// }
 				}
 
-				/* Calculate area of element above critical stress */ 
-				if (is_critical) {
-					IssmDouble x1 = element->vertices[0]->x;
-					IssmDouble y1 = element->vertices[0]->y;
-					IssmDouble x2 = element->vertices[1]->x;
-					IssmDouble y2 = element->vertices[1]->y;
-					IssmDouble x3 = element->vertices[2]->x;
-					IssmDouble y3 = element->vertices[2]->y;
-					local_aflipped += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
-				}
+				
 
 				delete gauss;
 			}
@@ -1115,10 +1107,10 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			// propagate local variable to gloabl cpu
 			// the code doesn't continue to next line until all the Allreduce calls have finished executing
 			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-			ISSM_MPI_Allreduce(&local_aflipped,&aflipped,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm()); 
+			// ISSM_MPI_Allreduce(&local_aflipped,&aflipped,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm()); 
 			ISSM_MPI_Allreduce(&local_min_x, &global_min_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
 			
-			total_aflipped += aflipped;
+			// total_aflipped += aflipped;
 			
 			/*Assemble and serialize flag vector*/
 			vec_constraint_nodes->Assemble();
@@ -1128,12 +1120,61 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/*Free resources:*/
 		delete vec_constraint_nodes;
 
+		IssmDouble local_aflipped=0.0;
+		for (Object* & object : femmodel->elements->objects) {
+			/* Calculate area of element above critical stress */
+			Element* element  = xDynamicCast<Element*>(object);
+			int      numnodes = element->GetNumberOfNodes();
+
+			// Ignore elements without ice
+			if (!element->IsIceInElement()) continue;
+
+			/* Skip elements on the ice front */
+			IssmDouble ls[3]; 
+			element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+			int nrice = 0;
+			for(int i = 0; i < 3; i++) {
+				if(ls[i] < 0.) nrice++;
+			}
+			if (nrice < 3) continue; 
+
+			Gauss* gauss = element->NewGauss();
+			IssmDouble n_crit = 0;
+			for(int in=0;in<numnodes;in++){
+				gauss->GaussNode(element->GetElementType(),in);
+				Node* node=element->GetNode(in);
+				if (!node->IsActive()) continue;
+
+				/* mark the interior node for calving if it is beyond critical calving stress */
+				if(constraint_nodes[node->Lid()]==1.) n_crit = n_crit + 1.0;
+			}
+
+			/* Calculate a "weighted" area of elements to be calved */
+			if (n_crit > 1.0) {
+				IssmDouble x1 = element->vertices[0]->x;
+				IssmDouble y1 = element->vertices[0]->y;
+				IssmDouble x2 = element->vertices[1]->x;
+				IssmDouble y2 = element->vertices[1]->y;
+				IssmDouble x3 = element->vertices[2]->x;
+				IssmDouble y3 = element->vertices[2]->y;
+				local_aflipped += (n_crit/3.0) * 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
+			}
+		}
+
+		/* Reduce local area to global across all MPI ranks */
+		IssmDouble aflipped = 0.0;
+		ISSM_MPI_Allreduce(&local_aflipped, &aflipped, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+
+		/* Store the propagated calving area as a parameter for output */
+		femmodel->parameters->SetParam(aflipped, CalvingPropagatedAreaEnum);
+		_printf0_("\tIce Front x-coord=" << ice_front_x/1000 << "km.\n");
+		_printf0_("\tMin. Critical x-coord=" << global_min_x/1000 << "km.\n");
 		_printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
-		_printf0_("\tPropagated " << total_aflipped/1e6 << " km^2 into ice interior.\n");
-		_printf0_("\tMin x coord = " << global_min_x/1000 << "km.\n");
+		_printf0_("\tPropagated " << aflipped/1e6 << " km^2 into ice interior.\n");
 
 		/* the constraint is for current timestep only */
-		if (total_aflipped>=1.0*ice_front_area) {
+		// if (aflipped>=1.0*ice_front_area) {
+		if (fabs(ice_front_x - global_min_x)>=8e3 && ice_front_x>global_min_x) { // hard-coded minimum iceberg size for stability
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
 				int      numnodes = element->GetNumberOfNodes();

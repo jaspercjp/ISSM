@@ -118,6 +118,7 @@ enum definitions{
 	CalvingLawEnum,
 	CalvingMinthicknessEnum,
 	CalvingOccurredEnum,
+	CalvingPropagatedAreaEnum,
 	CalvingTestSpeedfactorEnum,
 	CalvingTestIndependentRateEnum,
 	CalvingUseParamEnum,

@@ -2452,6 +2452,15 @@ void FemModel::RequestedOutputsx(Results **presults,char** requested_outputs, in
 					case IceMassEnum:                        this->IceMassx(&double_result,false);                  break;
 					case IcefrontMassFluxEnum:               this->IcefrontMassFluxx(&double_result,false);         break;
 					case IcefrontMassFluxLevelsetEnum:       this->IcefrontMassFluxLevelsetx(&double_result,false);         break;
+					case CalvingPropagatedAreaEnum: {
+						if(this->parameters->Exist(CalvingPropagatedAreaEnum)){
+							this->parameters->FindParam(&double_result, CalvingPropagatedAreaEnum);
+						}
+						else{
+							double_result = 0.0;
+						}
+					}
+					break;
 					case IceMassScaledEnum:                  this->IceMassx(&double_result,true);                   break;
 					case IceVolumeEnum:                      this->IceVolumex(&double_result,false);                break;
 					case IceVolumeScaledEnum:                this->IceVolumex(&double_result,true);                 break;
@@ -2750,6 +2759,7 @@ void FemModel::Responsex(IssmDouble* responses,int response_descriptor_enum){/*{
 		case BalancethicknessMisfitEnum:         BalancethicknessMisfitx(responses); break;
 		case TotalCalvingFluxLevelsetEnum:		  this->TotalCalvingFluxLevelsetx(responses, false); break;
 		case TotalCalvingMeltingFluxLevelsetEnum:this->TotalCalvingMeltingFluxLevelsetx(responses, false); break;
+		case CalvingPropagatedAreaEnum:          this->CalvingPropagatedAreax(responses); break;
 		case TotalFloatingBmbEnum:			        this->TotalFloatingBmbx(responses, false); break;
 		case TotalFloatingBmbScaledEnum:			  this->TotalFloatingBmbx(responses, true); break;
 		case TotalGroundedBmbEnum:			        this->TotalGroundedBmbx(responses, false); break;
@@ -3099,6 +3109,18 @@ void FemModel::TotalCalvingMeltingFluxLevelsetx(IssmDouble* pM, bool scaled){/*{
 
 	/*Assign output pointers: */
 	*pM=total_calving_flux;
+
+}/*}}}*/
+void FemModel::CalvingPropagatedAreax(IssmDouble* pArea){/*{{{*/
+
+	IssmDouble area = 0.0;
+
+	if(this->parameters->Exist(CalvingPropagatedAreaEnum)){
+		this->parameters->FindParam(&area, CalvingPropagatedAreaEnum);
+	}
+
+	/*Assign output pointer: */
+	*pArea = area;
 
 }/*}}}*/
 void FemModel::TotalFloatingBmbx(IssmDouble* pFbmb, bool scaled){/*{{{*/
