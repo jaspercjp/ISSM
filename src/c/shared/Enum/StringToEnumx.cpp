@@ -122,10 +122,13 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"CalvingADStressThresholdGroundedice")==0) return CalvingADStressThresholdGroundediceEnum;
 	      else if (strcmp(name,"CalvingCrevasseDepth")==0) return CalvingCrevasseDepthEnum;
 	      else if (strcmp(name,"CalvingCrevasseThreshold")==0) return CalvingCrevasseThresholdEnum;
+	      else if (strcmp(name,"CalvingMinIcebergSize")==0) return CalvingMinIcebergSizeEnum;
+	      else if (strcmp(name,"CalvingAdvectIcefront")==0) return CalvingAdvectIcefrontEnum;
 	      else if (strcmp(name,"CalvingHeightAboveFloatation")==0) return CalvingHeightAboveFloatationEnum;
 	      else if (strcmp(name,"CalvingLaw")==0) return CalvingLawEnum;
 	      else if (strcmp(name,"CalvingMinthickness")==0) return CalvingMinthicknessEnum;
 	      else if (strcmp(name,"CalvingPropagatedArea")==0) return CalvingPropagatedAreaEnum;
+	      else if (strcmp(name,"CalvingPropagatedMinX")==0) return CalvingPropagatedMinXEnum;
 	      else if (strcmp(name,"CalvingTestSpeedfactor")==0) return CalvingTestSpeedfactorEnum;
 	      else if (strcmp(name,"CalvingTestIndependentRate")==0) return CalvingTestIndependentRateEnum;
 	      else if (strcmp(name,"CalvingUseParam")==0) return CalvingUseParamEnum;
@@ -870,6 +873,9 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"DeviatoricStresszz")==0) return DeviatoricStresszzEnum;
 	      else if (strcmp(name,"DeviatoricStress1")==0) return DeviatoricStress1Enum;
 	      else if (strcmp(name,"DeviatoricStress2")==0) return DeviatoricStress2Enum;
+	      else if (strcmp(name,"DeviatoricStressxxAvg")==0) return DeviatoricStressxxAvgEnum;
+	      else if (strcmp(name,"DeviatoricStressyyAvg")==0) return DeviatoricStressyyAvgEnum;
+	      else if (strcmp(name,"DeviatoricStressxyAvg")==0) return DeviatoricStressxyAvgEnum;
 	      else if (strcmp(name,"DistanceToCalvingfront")==0) return DistanceToCalvingfrontEnum;
 	      else if (strcmp(name,"DistanceToGroundingline")==0) return DistanceToGroundinglineEnum;
 	      else if (strcmp(name,"Domain2Dhorizontal")==0) return Domain2DhorizontalEnum;

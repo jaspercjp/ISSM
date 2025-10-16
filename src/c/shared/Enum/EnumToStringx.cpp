@@ -123,10 +123,13 @@ const char* EnumToStringx(int en){
 		case CalvingCrevasseDepthEnum : return "CalvingCrevasseDepth";
 		case CalvingCrevasseThresholdEnum : return "CalvingCrevasseThreshold";
 		case CalvingHeightAboveFloatationEnum : return "CalvingHeightAboveFloatation";
+		case CalvingMinIcebergSizeEnum : return "CalvingMinIcebergSize";
+		case CalvingAdvectIcefrontEnum : return "CalvingAdvectIcefront";
 		case CalvingLawEnum : return "CalvingLaw";
 		case CalvingMinthicknessEnum : return "CalvingMinthickness";
 		case CalvingOccurredEnum : return "CalvingOccurred";
 		case CalvingPropagatedAreaEnum : return "CalvingPropagatedArea";
+		case CalvingPropagatedMinXEnum : return "CalvingPropagatedMinX";
 		case CalvingTestSpeedfactorEnum : return "CalvingTestSpeedfactor";
 		case CalvingTestIndependentRateEnum : return "CalvingTestIndependentRate";
 		case CalvingUseParamEnum : return "CalvingUseParam";
@@ -853,6 +856,9 @@ const char* EnumToStringx(int en){
 		case DeviatoricStresszzEnum : return "DeviatoricStresszz";
 		case DeviatoricStress1Enum : return "DeviatoricStress1";
 		case DeviatoricStress2Enum : return "DeviatoricStress2";
+		case DeviatoricStressxxAvgEnum : return "DeviatoricStressxxAvg";
+		case DeviatoricStressyyAvgEnum : return "DeviatoricStressyyAvg";
+		case DeviatoricStressxyAvgEnum : return "DeviatoricStressxyAvg";
 		case DistanceToCalvingfrontEnum : return "DistanceToCalvingfront";
 		case DistanceToGroundinglineEnum : return "DistanceToGroundingline";
 		case Domain2DhorizontalEnum : return "Domain2Dhorizontal";
@@ -978,6 +984,7 @@ const char* EnumToStringx(int en){
 		case MaskOceanLevelsetEnum : return "MaskOceanLevelset";
 		case MaskIceLevelsetEnum : return "MaskIceLevelset";
 		case MaskIceRefLevelsetEnum : return "MaskIceRefLevelset";
+		case SpcLevelsetEnum : return "SpcLevelset";
 		case MasstransportSpcthicknessEnum : return "MasstransportSpcthickness";
 		case MmemasstransportThicknessEnum : return "MmemasstransportThickness";
 		case MmemasstransportMaskIceLevelsetEnum : return "MmemasstransportMaskIceLevelset";

@@ -1192,6 +1192,82 @@ void FemModel::DeviatoricStressx(){/*{{{*/
 	}
 }
 /*}}}*/
+void FemModel::AverageDeviatoricStressx(){/*{{{*/
+
+	int numnodes = this->nodes->NumberOfNodes();
+	int localmasters = this->nodes->NumberOfNodesLocal();
+
+	// Create vectors for averaged stresses
+	Vector<IssmDouble>* vec_sxx = new Vector<IssmDouble>(localmasters, numnodes);
+	Vector<IssmDouble>* vec_syy = new Vector<IssmDouble>(localmasters, numnodes);
+	Vector<IssmDouble>* vec_sxy = new Vector<IssmDouble>(localmasters, numnodes);
+
+	// Accumulate P1DG values divided by connectivity (same as ResultToVector)
+	for(Object* & object : this->elements->objects){
+		Element* element = xDynamicCast<Element*>(object);
+
+		int numnodes_elem = element->GetNumberOfNodes();
+		int sidlist[3];
+		int connectivity[3];
+		IssmDouble sxx_values[3];
+		IssmDouble syy_values[3];
+		IssmDouble sxy_values[3];
+
+		element->GetVerticesSidList(&sidlist[0]);
+		element->GetVerticesConnectivityList(&connectivity[0]);
+		element->GetInputListOnVertices(&sxx_values[0], DeviatoricStressxxEnum);
+		element->GetInputListOnVertices(&syy_values[0], DeviatoricStressyyEnum);
+		element->GetInputListOnVertices(&sxy_values[0], DeviatoricStressxyEnum);
+
+		// Divide by connectivity and add
+		for(int i=0; i<numnodes_elem; i++){
+			vec_sxx->SetValue(sidlist[i], sxx_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+			vec_syy->SetValue(sidlist[i], syy_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+			vec_sxy->SetValue(sidlist[i], sxy_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+		}
+	}
+
+	// Assemble across MPI ranks
+	vec_sxx->Assemble();
+	vec_syy->Assemble();
+	vec_sxy->Assemble();
+
+	// Convert to P1 inputs and add to elements
+	IssmDouble sxx[3], syy[3], sxy[3];
+	IssmDouble* sxx_serial = NULL;
+	IssmDouble* syy_serial = NULL;
+	IssmDouble* sxy_serial = NULL;
+
+	this->GetLocalVectorWithClonesNodes(&sxx_serial, vec_sxx);
+	this->GetLocalVectorWithClonesNodes(&syy_serial, vec_syy);
+	this->GetLocalVectorWithClonesNodes(&sxy_serial, vec_sxy);
+
+	for(Object* & object : this->elements->objects){
+		Element* element = xDynamicCast<Element*>(object);
+		sxx[0] = sxx_serial[element->vertices[0]->Sid()];
+		sxx[1] = sxx_serial[element->vertices[1]->Sid()];
+		sxx[2] = sxx_serial[element->vertices[2]->Sid()];
+		syy[0] = syy_serial[element->vertices[0]->Sid()];
+		syy[1] = syy_serial[element->vertices[1]->Sid()];
+		syy[2] = syy_serial[element->vertices[2]->Sid()];
+		sxy[0] = sxy_serial[element->vertices[0]->Sid()];
+		sxy[1] = sxy_serial[element->vertices[1]->Sid()];
+		sxy[2] = sxy_serial[element->vertices[2]->Sid()];
+
+		element->AddInput(DeviatoricStressxxAvgEnum, sxx, P1Enum);
+		element->AddInput(DeviatoricStressyyAvgEnum, syy, P1Enum);
+		element->AddInput(DeviatoricStressxyAvgEnum, sxy, P1Enum);
+	}
+
+	// Cleanup
+	delete vec_sxx;
+	delete vec_syy;
+	delete vec_sxy;
+	xDelete<IssmDouble>(sxx_serial);
+	xDelete<IssmDouble>(syy_serial);
+	xDelete<IssmDouble>(sxy_serial);
+}
+/*}}}*/
 void FemModel::DistanceToFieldValue(int fieldenum,IssmDouble fieldvalue,int distanceenum){/*{{{*/
 
 	/*recover my_rank:*/
@@ -2461,6 +2537,15 @@ void FemModel::RequestedOutputsx(Results **presults,char** requested_outputs, in
 						}
 					}
 					break;
+					case CalvingPropagatedMinXEnum: {
+						if(this->parameters->Exist(CalvingPropagatedMinXEnum)){
+							this->parameters->FindParam(&double_result, CalvingPropagatedMinXEnum);
+						}
+						else{
+							double_result = 1e20;
+						}
+					}
+					break;
 					case IceMassScaledEnum:                  this->IceMassx(&double_result,true);                   break;
 					case IceVolumeEnum:                      this->IceVolumex(&double_result,false);                break;
 					case IceVolumeScaledEnum:                this->IceVolumex(&double_result,true);                 break;
@@ -2760,6 +2845,7 @@ void FemModel::Responsex(IssmDouble* responses,int response_descriptor_enum){/*{
 		case TotalCalvingFluxLevelsetEnum:		  this->TotalCalvingFluxLevelsetx(responses, false); break;
 		case TotalCalvingMeltingFluxLevelsetEnum:this->TotalCalvingMeltingFluxLevelsetx(responses, false); break;
 		case CalvingPropagatedAreaEnum:          this->CalvingPropagatedAreax(responses); break;
+		case CalvingPropagatedMinXEnum:          this->CalvingPropagatedMinXx(responses); break;
 		case TotalFloatingBmbEnum:			        this->TotalFloatingBmbx(responses, false); break;
 		case TotalFloatingBmbScaledEnum:			  this->TotalFloatingBmbx(responses, true); break;
 		case TotalGroundedBmbEnum:			        this->TotalGroundedBmbx(responses, false); break;
@@ -3121,6 +3207,18 @@ void FemModel::CalvingPropagatedAreax(IssmDouble* pArea){/*{{{*/
 
 	/*Assign output pointer: */
 	*pArea = area;
+
+}/*}}}*/
+void FemModel::CalvingPropagatedMinXx(IssmDouble* pMinX){/*{{{*/
+
+	IssmDouble minx = 1e20;
+
+	if(this->parameters->Exist(CalvingPropagatedMinXEnum)){
+		this->parameters->FindParam(&minx, CalvingPropagatedMinXEnum);
+	}
+
+	/*Assign output pointer: */
+	*pMinX = minx;
 
 }/*}}}*/
 void FemModel::TotalFloatingBmbx(IssmDouble* pFbmb, bool scaled){/*{{{*/

@@ -574,44 +574,66 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			/*Coffey 2024, Buttressing based */
 			IssmDouble taumin = (s_xx + s_yy)/2 - sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
 			IssmDouble taumax = (s_xx + s_yy)/2 + sqrt((s_xx-s_yy)*(s_xx-s_yy)/4.0 + s_xy*s_xy);
-			Kmax = 1.0 - 2.0*(2*taumin + taumax) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+			// Numerically stable form: K = (R_IT - R) / R_IT
+			IssmDouble R = 2*taumin + taumax;
+			IssmDouble R_IT = rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness/2.0;
+			Kmax = (R_IT - R) / R_IT;
 			K=Kmax;
-		} 
+		}
 		else if (crevasse_opening_stress==3) {
-			/* This formulation is applicable only to idealized geometries where 
+			/* This formulation is applicable only to idealized geometries where
 				the y-direction is the longitudinal direction*/
-			K=1.0 - 2.0*(2.0*s_yy + s_xx) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);			
-		} 
+			// Numerically stable form: K = (R_IT - R) / R_IT
+			IssmDouble R = 2.0*s_yy + s_xx;
+			IssmDouble R_IT = rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness/2.0;
+			K = (R_IT - R) / R_IT;
+		}
 		else if (crevasse_opening_stress==4) {
 			/* same as no.3, but for when x is the longitudinal direction */
-			K=1.0 - 2.0*(2.0*s_xx + s_yy) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);			
-		} 
+			// Numerically stable form: K = (R_IT - R) / R_IT
+			IssmDouble R = 2.0*s_xx + s_yy;
+			IssmDouble R_IT = rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness/2.0;
+			K = (R_IT - R) / R_IT;
+
+			// DEBUG: Print values for first few vertices near ice front
+			// if(this->IsIcefront() && iv == 0){
+			// 	_printf0_("\t[DEBUG K calc] Element ID: " << this->lid << ", Vertex: " << iv << "\n");
+			// 	_printf0_("\t  x=" << this->vertices[iv]->x/1000. << " km, y=" << this->vertices[iv]->y/1000. << " km\n");
+			// 	_printf0_("\t  s_xx=" << s_xx << ", s_yy=" << s_yy << "\n");
+			// 	_printf0_("\t  H=" << thickness << " m\n");
+			// 	_printf0_("\t  R=" << R << ", R_IT=" << R_IT << "\n");
+			// 	_printf0_("\t  K=" << K << "\n");
+			// }
+		}
 		else if (crevasse_opening_stress==5) {
 			/* the general case, using velocity vectors to calculate longitudinal direction */
-			IssmDouble vel = sqrt(vx*vx + vy*vy); 
-			
+			IssmDouble vel = sqrt(vx*vx + vy*vy);
+
 			if (vel < 1e-10) {
 				// Handle nearly zero velocity case - use default approach
-				K = 1.0 - 2.0*(2.0*s_xx + s_yy) / (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness);
+				// Numerically stable form: K = (R_IT - R) / R_IT
+				IssmDouble R = 2.0*(2.0*s_xx + s_yy);
+				IssmDouble R_IT = rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness;
+				K = (R_IT - R) / R_IT;
 			} else {
 				// Unit velocity vector (longitudinal direction)
-				IssmDouble nx = vx/vel; 
+				IssmDouble nx = vx/vel;
 				IssmDouble ny = vy/vel;
-				
+
 				// Transform stresses to velocity-aligned coordinate system
 				// s_lon = longitudinal stress (along velocity)
 				// s_lat = latitudinal stress (perpendicular to velocity)
 				IssmDouble s_lon = nx*nx*s_xx + 2.0*nx*ny*s_xy + ny*ny*s_yy;
 				IssmDouble s_lat = ny*ny*s_xx - 2.0*nx*ny*s_xy + nx*nx*s_yy;
-				
-				// Resistive stress along velocity vector
-				IssmDouble R_vel = 2.0*s_lon + s_lat;
-				
+
+				// Resistive stress
+				IssmDouble R = 2.0*s_lon + s_lat;
+
 				// Ice overburden pressure term
 				IssmDouble R_IT = rho_ice*constant_g*(1.0-rho_ice/rho_seawater)*thickness/2.0;
-				
-				// Calculate buttressing
-				K = 1.0 - R_vel / R_IT;
+
+				// Calculate buttressing (numerically stable form)
+				K = (R_IT - R) / R_IT;
 
 			}
 		}
@@ -621,12 +643,12 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 
 		if(crevasse_opening_stress>=2) {
 			/*Coffey 2024, Buttressing based */
-			if (K<0.) K = 0.0;
+			// if (K<0.) K = 0.0;
 			// cout<<"Storing computed buttressing and crevasse depth variables"<<endl;
 			buttressing_k[iv]=K;
 			// cout << "R " << 2.0*s_xx+s_yy << "| R_IT " << (rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness)/2 << "| K " << K << endl;
-			surface_crevasse[iv] = (1.0-rho_ice/rho_seawater)*(1.0-sqrt(K));
-			basal_crevasse[iv] = (rho_ice/rho_seawater)*(1.0-sqrt(K));
+			surface_crevasse[iv] = (1.0-rho_ice/rho_seawater)*(1.0-sqrt(fmax(K,0)));
+			basal_crevasse[iv] = (rho_ice/rho_seawater)*(1.0-sqrt(fmax(K,0)));
 			//_printf0_(Kmax<<", "<<basal_crevasse[iv]<<", "<<surface_crevasse[iv]<<endl);
 		}
 		else {
@@ -644,7 +666,16 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 		if (surface_crevasse[iv]<0.) surface_crevasse[iv]=0.;
 		if (basal_crevasse[iv]<0.) basal_crevasse[iv]=0.;
 		/*Total crevasse depth (surface + basal)*/
-		crevasse_depth[iv]   = 1 - sqrt(K);
+		crevasse_depth[iv]   = 1 - sqrt(fmax(K, 0));
+
+		/* Debug print when K is negative */
+		// if (K < 0.) {
+		// 	_printf0_("\tWARNING [Tria.cpp]: Negative K detected!\n");
+		// 	_printf0_("  \tElement ID: " << this->lid << ", Vertex index: " << iv << "\n");
+		// 	_printf0_("  \tVertex coords: x=" << this->vertices[iv]->x/1000. << "km, y=" << this->vertices[iv]->y/1000. << "km\n");
+		// 	_printf0_("  \tK=" << K << "\n");
+		// 	_printf0_("  \tCD=" << crevasse_depth[iv] << "\n");
+		// }
 	}
 
 	this->AddInput(SurfaceCrevasseEnum,&surface_crevasse[0],P1DGEnum);
@@ -1050,7 +1081,6 @@ void       Tria::CalvingMeltingFluxLevelset(){/*{{{*/
 }
 /*}}}*/
 void       Tria::CalvingRateParameterization(){/*{{{*/
-
 	IssmDouble  xyz_list[NUMVERTICES][3];
 	IssmDouble  epsilon[3]; /* epsilon=[exx,eyy,exy];*/
 	IssmDouble  calvingrate[NUMVERTICES];
@@ -4810,6 +4840,12 @@ void	      Tria::MovingFrontalVelocity(void){/*{{{*/
 				_error_("Calving law "<<EnumToStringx(calvinglaw)<<" not supported yet");
 		}
 		for(i=0;i<dim;i++) w[i]=v[i]-c[i]-m[i];
+
+		// Debug: Print velocities for CrevasseDepth calving
+		// if(calvinglaw == CalvingCrevasseDepthEnum && iv==0){
+		// 	_printf0_("   [MovingFrontalVel] v=(" << v[0] << "," << v[1] << ") m/s, " <<
+		// 	          "w=(" << w[0] << "," << w[1] << ") m/s\n");
+		// }
 
 		movingfrontvx[iv] = w[0];
 		movingfrontvy[iv] = w[1];		
