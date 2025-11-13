@@ -915,6 +915,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 	}
    else if(calvinglaw==CalvingCrevasseDepthEnum){
 		/*Intermediaries*/
+		IssmDouble MAX_ICEBERG_SIZE=6e3;
 		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K, ocean_levelset;
 		IssmDouble max_distance = 0.0;
 		IssmDouble* constraint_nodes = NULL;
@@ -1119,7 +1120,6 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			Input*   surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum); _assert_(surface_crevasse_input);
 			Input*   thickness_input        = element->GetInput(ThicknessEnum); _assert_(thickness_input);
 			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
-			Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 			Input*   buttressing_k_input    = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
 			Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
 			Input* boundary_input 		    = element->GetInput(MeshVertexonboundaryEnum);  
@@ -1170,8 +1170,8 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		// IssmDouble aflipped = 0.0;
 		// IssmDouble total_aflipped = 0.0;
 
-		IssmDouble local_min_x = 1e20;  // Large initial value
-		IssmDouble global_min_x=1e20;
+		IssmDouble local_min_x = 1e10;  // Large initial value
+		IssmDouble global_min_x=1e10;
 
 		while(nflipped){
 			IssmDouble local_aflipped=0.0; // Area of all elements flipped
@@ -1187,6 +1187,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
 				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
 				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
+				Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 				Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
 				Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
 				
@@ -1202,15 +1203,15 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				if (nrice < 3) continue; 
 				
 				/* Is this element connected to a node that should be calved? */
-				bool isconnected = false;
-				for(int in=0;in<numnodes;in++){
-					Node* node=element->GetNode(in);
-					if(constraint_nodes[node->Lid()]>0.){
-						isconnected = true;
-						break;
-					}
-				}
-				if (!isconnected) continue; 
+				bool isconnected = true;
+				// for(int in=0;in<numnodes;in++){
+				// 	Node* node=element->GetNode(in);
+				// 	if(constraint_nodes[node->Lid()]>0.){
+				// 		isconnected = true;
+				// 		break;
+				// 	}
+				// }
+				// if (!isconnected) continue; 
 				
 				// IssmDouble ls[3];
 				element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
@@ -1233,6 +1234,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					crevassedepth = averaged_crevassedepth[node->Lid()];
 					K = averaged_buttressing_k[node->Lid()];
 					thickness_input->GetInputValue(&thickness,gauss);
+					dis_input->GetInputValue(&distance, gauss);
 					/* ===== END AVERAGED VALUES USE ===== */
 					// _printf0_("\tNode " << in << " at (" << element->vertices[in]->x/1000 << "," << element->vertices[in]->y/1000 << ") km: CD=" << crevassedepth 
 					// 	<< ", H=" << thickness << "m" << ", buttressing=" << K << "\n");
@@ -1243,7 +1245,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					// if (K<0) continue;
 
 					/* mark the node for calving if it is beyond critical calving stress */ 
-					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0.){
+					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE){
 						// is_critical=true;
 						local_nflipped++; 
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
