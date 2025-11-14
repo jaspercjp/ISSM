@@ -1248,7 +1248,9 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					// if (K<0) continue;
 
 					/* mark the node for calving if it is beyond critical calving stress */ 
-					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE && K>0){
+					/* 11/14/2025: If we add the requirement that K<0 here, calving will not happen. All critical nodes found 
+					   found by the algorithm have K<0 --- now what this K is exactly is not clear to me ... */
+					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE){
 						// is_critical=true;
 						local_nflipped++; 
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
