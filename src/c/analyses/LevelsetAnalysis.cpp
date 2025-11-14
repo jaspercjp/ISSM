@@ -1107,7 +1107,9 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/* ===== END P1DG AVERAGING BLOCK (REVERT POINT) ===== */
 
 		IssmDouble local_ice_front_area=0;
-		IssmDouble local_ice_front_x=0;
+		IssmDouble local_ice_front_x=2e11;
+		IssmDouble ice_front_x=1e10;
+		IssmDouble ice_front_area=0; 
 		/* Find all elements that are on the ice front. Note that the element->IsIceFront function 
 			   only returns elements that has exactly one node without ice */
 		for(Object* & object : femmodel->elements->objects){
@@ -1150,28 +1152,29 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				IssmDouble y2 = element->vertices[1]->y;
 				IssmDouble x3 = element->vertices[2]->x;
 				IssmDouble y3 = element->vertices[2]->y;
+				// _printf0_("\tElement at ice front: x1=" << x1/1000 << "km, x2=" << x2/1000 << "km, x3=" << x3/1000 << "km.\n");
 				local_ice_front_area += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
 				local_ice_front_x=fmin(fmin(x1,x2),x3);
 			}
 		}
-		IssmDouble ice_front_area;
+		// _printf0_("\tlocal_ice_front_x=" << local_ice_front_x/1000 <<"km\n");
+
 		ISSM_MPI_Allreduce(&local_ice_front_area,&ice_front_area,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
-		IssmDouble ice_front_x; 
 		ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-		// _printf0_("ice front = " << ice_front_x/1000 << "km.\n");
-		/*Assemble vector and serialize: */
-		vec_constraint_nodes->Assemble(); // for parallelization
-		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
+		_printf0_("\tice front = " << ice_front_x/1000 << "km.\n"); 
+		/*Assemble vector and serialize: */ 
+		vec_constraint_nodes->Assemble(); // for parallelization 
+		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes); 
 
 		/* Look for all nodes that are connected to calving front nodes */
-		int nflipped=1;
+		int nflipped=1; 
 		IssmDouble ls[3]; 
 
-		// IssmDouble aflipped = 0.0;
-		// IssmDouble total_aflipped = 0.0;
+		// IssmDouble aflipped = 0.0; 
+		// IssmDouble total_aflipped = 0.0; 
 
-		IssmDouble local_min_x = 1e10;  // Large initial value
-		IssmDouble global_min_x=1e10;
+		IssmDouble local_min_x  = 1e10;  // Large initial value
+		IssmDouble global_min_x = 1e10;
 
 		while(nflipped){
 			IssmDouble local_aflipped=0.0; // Area of all elements flipped
@@ -1245,7 +1248,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					// if (K<0) continue;
 
 					/* mark the node for calving if it is beyond critical calving stress */ 
-					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE){
+					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE && K>0){
 						// is_critical=true;
 						local_nflipped++; 
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
@@ -1324,14 +1327,14 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		femmodel->parameters->SetParam(aflipped, CalvingPropagatedAreaEnum);
 		/* Store the minimum x-coordinate of critical nodes as a parameter for output */
 		femmodel->parameters->SetParam(global_min_x, CalvingPropagatedMinXEnum);
-		_printf0_("\tIce Front x-coord=" << ice_front_x/1000 << "km.\n");
+		// _printf0_("\tIce Front x-coord=" << ice_front_x/1000 << "km.\n");
 		_printf0_("\tMin. Critical x-coord=" << global_min_x/1000 << "km.\n");
 		_printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
 		_printf0_("\tPropagated " << aflipped/1e6 << " km^2 into ice interior.\n");
 
 		/* the constraint is for current timestep only */
 		// if (aflipped>=1.0*ice_front_area) {
-		if (fabs(ice_front_x - global_min_x)>=min_iceberg_size && ice_front_x>global_min_x && perform_calving) { // minimum iceberg size threshold (parameter-controlled)
+		if (fabs(ice_front_x-global_min_x)>=min_iceberg_size && ice_front_x>global_min_x && perform_calving) { // minimum iceberg size threshold (parameter-controlled)
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
 				int      numnodes = element->GetNumberOfNodes();
