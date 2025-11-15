@@ -1151,7 +1151,6 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		ISSM_MPI_Allreduce(&local_ice_front_area,&ice_front_area,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
 		ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-		_printf0_("\tice front = " << ice_front_x/1000 << "km.\n"); 
 		/*Assemble vector and serialize: */ 
 		vec_constraint_nodes->Assemble(); // for parallelization 
 		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes); 
@@ -1257,7 +1256,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				}
 				delete gauss;
 			}
-			cout << "\t\tlocal_min_x="<<local_min_x/1000<<"\n";
+			// cout << "\t\tlocal_min_x="<<local_min_x/1000<<"\n";
 			/*Count how many new nodes were found*/
 			// propagate local variable to gloabl cpu
 			// the code doesn't continue to next line until all the Allreduce calls have finished executing
@@ -1274,56 +1273,58 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		}
 		/*Free resources:*/
 		delete vec_constraint_nodes;
+		
+		/* Removed as af 11/15/2025: tracking the area of ice to be calved */
+		// IssmDouble local_aflipped=0.0;
+		// for (Object* & object : femmodel->elements->objects) {
+		// 	/* Calculate area of element above critical stress */
+		// 	Element* element  = xDynamicCast<Element*>(object);
+		// 	int      numnodes = element->GetNumberOfNodes();
 
-		IssmDouble local_aflipped=0.0;
-		for (Object* & object : femmodel->elements->objects) {
-			/* Calculate area of element above critical stress */
-			Element* element  = xDynamicCast<Element*>(object);
-			int      numnodes = element->GetNumberOfNodes();
+		// 	/* Ignore elements without ice */
+		// 	if (!element->IsIceInElement()) continue;
 
-			/* Ignore elements without ice */
-			if (!element->IsIceInElement()) continue;
+		// 	/* Skip elements on the ice front */
+		// 	if (element->IsIcefront()) continue;
 
-			/* Skip elements on the ice front */
-			if (element->IsIcefront()) continue;
-
-			Gauss* gauss = element->NewGauss();
-			IssmDouble n_crit = 0.;
-			for(int in=0;in<numnodes;in++){
-				// gauss->GaussNode(element->GetElementType(),in);
-				gauss->GaussVertex(in);
-				Node* node=element->GetNode(in);
-				if (!node->IsActive()) continue;
+		// 	Gauss* gauss = element->NewGauss();
+		// 	IssmDouble n_crit = 0.;
+		// 	for(int in=0;in<numnodes;in++){
+		// 		// gauss->GaussNode(element->GetElementType(),in);
+		// 		gauss->GaussVertex(in);
+		// 		Node* node=element->GetNode(in);
+		// 		if (!node->IsActive()) continue;
 				
-				crevassedepth = averaged_crevassedepth[node->Sid()];
-				/* mark the interior node for calving if it is beyond critical calving stress */
-				if(constraint_nodes[node->Lid()]==1. && crevassedepth>=crevasse_threshold) n_crit = n_crit + 1.0;
-			}
+		// 		crevassedepth = averaged_crevassedepth[node->Sid()];
+		// 		/* mark the interior node for calving if it is beyond critical calving stress */
+		// 		if(constraint_nodes[node->Lid()]==1. && crevassedepth>=crevasse_threshold) n_crit = n_crit + 1.0;
+		// 	}
 
-			/* Calculate a "weighted" area of elements to be calved */
-			if (n_crit > 1.0) {
-				IssmDouble x1 = element->vertices[0]->x;
-				IssmDouble y1 = element->vertices[0]->y;
-				IssmDouble x2 = element->vertices[1]->x;
-				IssmDouble y2 = element->vertices[1]->y;
-				IssmDouble x3 = element->vertices[2]->x;
-				IssmDouble y3 = element->vertices[2]->y;
-				local_aflipped += (n_crit/3.0) * 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
-			}
-		}
+		// 	/* Calculate a "weighted" area of elements to be calved */
+		// 	if (n_crit > 1.0) {
+		// 		IssmDouble x1 = element->vertices[0]->x;
+		// 		IssmDouble y1 = element->vertices[0]->y;
+		// 		IssmDouble x2 = element->vertices[1]->x;
+		// 		IssmDouble y2 = element->vertices[1]->y;
+		// 		IssmDouble x3 = element->vertices[2]->x;
+		// 		IssmDouble y3 = element->vertices[2]->y;
+		// 		local_aflipped += (n_crit/3.0) * 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
+		// 	}
+		// }
 
-		/* Reduce local area to global across all MPI ranks */
-		IssmDouble aflipped = 0.0;
-		ISSM_MPI_Allreduce(&local_aflipped, &aflipped, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+		// /* Reduce local area to global across all MPI ranks */
+		// IssmDouble aflipped = 0.0;
+		// ISSM_MPI_Allreduce(&local_aflipped, &aflipped, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
 
 		/* Store the propagated calving area as a parameter for output */
-		femmodel->parameters->SetParam(aflipped, CalvingPropagatedAreaEnum);
+		// femmodel->parameters->SetParam(aflipped, CalvingPropagatedAreaEnum);
 		/* Store the minimum x-coordinate of critical nodes as a parameter for output */
 		femmodel->parameters->SetParam(global_min_x, CalvingPropagatedMinXEnum);
 		// _printf0_("\tIce Front x-coord=" << ice_front_x/1000 << "km.\n");
-		_printf0_("\tMin. Critical x-coord=" << global_min_x/1000 << "km.\n");
-		_printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
-		_printf0_("\tPropagated " << aflipped/1e6 << " km^2 into ice interior.\n");
+		_printf0_("\tice front        = " << ice_front_x/1000 << "km.\n"); 
+		_printf0_("\tcritical x-coord = " << global_min_x/1000 << "km.\n");
+		// _printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
+		// _printf0_("\tPropagated " << aflipped/1e6 << " km^2 into ice interior.\n");
 
 		/* the constraint is for current timestep only */
 		// if (aflipped>=1.0*ice_front_area) {
@@ -1379,18 +1380,12 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 			_printf0_("\tDid not execute calving.\n");
 		}
 
-		/* ===== CLEANUP P1DG AVERAGED ARRAYS (REVERT POINT) =====
-		 * Free the averaged P1DG arrays.
-		 * To revert: remove these four lines. */
-		xDelete<IssmDouble>(averaged_crevassedepth);
-		xDelete<IssmDouble>(averaged_buttressing_k);
+		
 		xDelete<IssmDouble>(averaged_s_xx);
 		xDelete<IssmDouble>(averaged_s_yy);
-		/* ===== END CLEANUP ===== */
-
 		xDelete<IssmDouble>(constraint_nodes);
 	}
 
 	/*Default, do nothing*/
 	return;
-}/*}}}*/
+}
