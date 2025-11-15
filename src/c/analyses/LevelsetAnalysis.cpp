@@ -916,7 +916,11 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
    else if(calvinglaw==CalvingCrevasseDepthEnum){
 		/*Intermediaries*/
 		IssmDouble MAX_ICEBERG_SIZE=6e3;
-		IssmDouble  levelset,crevassedepth,bed,surface_crevasse,thickness,surface,distance,K, ocean_levelset;
+		IssmDouble crevassedepth, crevassedepth_avg; 
+		IssmDouble bed,surface_crevasse,thickness,surface,distance;
+		IssmDouble K, avg_K;
+		IssmDouble levelset, ocean_levelset;
+		IssmDouble s_xx,s_yy,rxx,rxxIT, s_xx_avg, s_yy_avg;
 		IssmDouble max_distance = 0.0;
 		IssmDouble* constraint_nodes = NULL;
 		IssmDouble time, time_step;
@@ -1061,55 +1065,41 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		/* ===== BEGIN P1DG AVERAGING BLOCK (REVERT POINT) =====
 		 * Compute element-averaged P1DG values to match ISSM output behavior.
-		 * This replicates the averaging done in Element::ResultToVector().
+		 * For stress components: Uses ISSM's standard ResultToVector() method.
+		 * For other fields: Manually replicates the averaging logic.
 		 * To revert: remove this entire block and restore element-local access below. */
-		IssmDouble* averaged_crevassedepth = NULL;
-		IssmDouble* averaged_buttressing_k = NULL;
+		IssmDouble* averaged_s_xx = NULL;
+		IssmDouble* averaged_s_yy = NULL;
 
 		// Create vectors to store averaged values at nodes
-		Vector<IssmDouble>* vec_crevassedepth = new Vector<IssmDouble>(localmasters, numnodes);
-		Vector<IssmDouble>* vec_buttressing_k = new Vector<IssmDouble>(localmasters, numnodes);
+		Vector<IssmDouble>* vec_s_xx = new Vector<IssmDouble>(localmasters, numnodes);  // Must use same constructor for MPI
+		Vector<IssmDouble>* vec_s_yy = new Vector<IssmDouble>(localmasters, numnodes);  // Must use same constructor for MPI
 
-		// Loop through all elements and accumulate P1DG values divided by connectivity
+		// Explicitly zero the stress vectors to ensure clean state for ADD_VAL operations
+		vec_s_xx->Set(0.0);
+		vec_s_yy->Set(0.0);
+
+		// Use the ResultToVector function to perform P1 averaging
 		for(Object* & object : femmodel->elements->objects){
 			Element* element = xDynamicCast<Element*>(object);
-			if(!element->IsIceInElement()) continue;
-
-			int numnodes_elem = element->GetNumberOfNodes();
-			int sidlist[3];
-			int connectivity[3];
-			IssmDouble crevassedepth_values[3];
-			IssmDouble buttressing_k_values[3];
-
-			element->GetVerticesSidList(&sidlist[0]);
-			element->GetVerticesConnectivityList(&connectivity[0]);
-			element->GetInputListOnVertices(&crevassedepth_values[0], CrevasseDepthEnum);
-			element->GetInputListOnVertices(&buttressing_k_values[0], ButtressingKEnum);
-
-			// Divide by connectivity and add (same as ResultToVector)
-			for(int i=0; i<numnodes_elem; i++){
-				vec_crevassedepth->SetValue(sidlist[i], crevassedepth_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
-				vec_buttressing_k->SetValue(sidlist[i], buttressing_k_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
-			}
+			if (element->IsIcefront() || !element->IsIceInElement()) continue; 
+			element->ResultToVector(vec_s_xx, DeviatoricStressxxEnum);
+			element->ResultToVector(vec_s_yy, DeviatoricStressyyEnum);
 		}
 
-		// Assemble vectors across MPI ranks
-		vec_crevassedepth->Assemble();
-		vec_buttressing_k->Assemble();
-
-		// Get local copies with clones
-		femmodel->GetLocalVectorWithClonesNodes(&averaged_crevassedepth, vec_crevassedepth);
-		femmodel->GetLocalVectorWithClonesNodes(&averaged_buttressing_k, vec_buttressing_k);
-
-		// Clean up vectors
-		delete vec_crevassedepth;
-		delete vec_buttressing_k;
-		/* ===== END P1DG AVERAGING BLOCK (REVERT POINT) ===== */
+		// Assemble across MPI ranks
+		vec_s_xx->Assemble();
+		vec_s_yy->Assemble();
+		femmodel->GetLocalVectorWithClonesNodes(&averaged_s_xx, vec_s_xx);
+		femmodel->GetLocalVectorWithClonesNodes(&averaged_s_yy, vec_s_yy);
+		delete vec_s_xx;
+		delete vec_s_yy;
+		/* ===== END P1DG AVERAGING BLOCK ===== */
 
 		IssmDouble local_ice_front_area=0;
 		IssmDouble local_ice_front_x=2e11;
-		IssmDouble ice_front_x=1e10;
 		IssmDouble ice_front_area=0; 
+		IssmDouble ice_front_x=1e10;
 		/* Find all elements that are on the ice front. Note that the element->IsIceFront function 
 			   only returns elements that has exactly one node without ice */
 		for(Object* & object : femmodel->elements->objects){
@@ -1169,33 +1159,36 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 		/* Look for all nodes that are connected to calving front nodes */
 		int nflipped=1; 
 		IssmDouble ls[3]; 
-
-		// IssmDouble aflipped = 0.0; 
-		// IssmDouble total_aflipped = 0.0; 
-
-		IssmDouble local_min_x  = 1e10;  // Large initial value
-		IssmDouble global_min_x = 1e10;
+		
+		IssmDouble global_min_x=2e11;
 
 		while(nflipped){
 			IssmDouble local_aflipped=0.0; // Area of all elements flipped
 			int local_nflipped=0;
+			IssmDouble local_min_x = global_min_x;  
 
 			for(Object* & object : femmodel->elements->objects){
 				Element* element  = xDynamicCast<Element*>(object);
+				// Ignore elements without ice
+				if (!element->IsIceInElement()) continue;
+
 				int      numnodes = element->GetNumberOfNodes();
 
 				Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
 				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
-				Input *bed_input              = element->GetInput(BedEnum);                    _assert_(bed_input);
-				Input *surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum);        _assert_(surface_crevasse_input);
 				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
 				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
 				Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
 				Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
 				Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
-				
-				// Ignore elements without ice
-				if (!element->IsIceInElement()) continue;
+				Input*   s_xx_input              = element->GetInput(DeviatoricStressxxEnum);     _assert_(s_xx_input);
+				Input*   s_xy_input              = element->GetInput(DeviatoricStressxyEnum);     _assert_(s_xy_input);
+				Input*   s_yy_input              = element->GetInput(DeviatoricStressyyEnum);     _assert_(s_yy_input);
+
+				IssmDouble rho_ice        = element->FindParam(MaterialsRhoIceEnum);
+				IssmDouble rho_seawater   = element->FindParam(MaterialsRhoSeawaterEnum);
+				IssmDouble rho_freshwater = element->FindParam(MaterialsRhoFreshwaterEnum);
+				IssmDouble constant_g     = element->FindParam(ConstantsGEnum);
 
 				/* Skip elements on the ice front */
 				element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
@@ -1217,7 +1210,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				// if (!isconnected) continue; 
 				
 				// IssmDouble ls[3];
-				element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+				// element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
 
 				/* Check stress if connected */
 				Gauss* gauss = element->NewGauss();
@@ -1231,42 +1224,40 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 					ocean_input->GetInputValue(&ocean_levelset, gauss);
 					if (ocean_levelset>=0.) continue;
 
-					/* ===== USE AVERAGED P1DG VALUES (REVERT POINT) =====
-					 * Use pre-computed averaged values instead of element-local GetInputValue().
-					 * To revert: replace these lines with GetInputValue() calls. */
-					crevassedepth = averaged_crevassedepth[node->Lid()];
-					K = averaged_buttressing_k[node->Lid()];
+					// crevassedepth_input->GetInputValue(&crevassedepth, gauss);
 					thickness_input->GetInputValue(&thickness,gauss);
-					dis_input->GetInputValue(&distance, gauss);
-					/* ===== END AVERAGED VALUES USE ===== */
-					// _printf0_("\tNode " << in << " at (" << element->vertices[in]->x/1000 << "," << element->vertices[in]->y/1000 << ") km: CD=" << crevassedepth 
-					// 	<< ", H=" << thickness << "m" << ", buttressing=" << K << "\n");
+					dis_input->GetInputValue(&distance, gauss); // note this distance is SIGNED!
+					s_xx_avg = averaged_s_xx[node->Sid()];
+					s_yy_avg = averaged_s_yy[node->Sid()];
 
-				    /* ISSM for some reason is picking up on nodes that have negative buttressing, 
-					   which corresponds most certainly to nodes that have already been calved. The
-					   band-aid fix on this is to skip those nodes when calving. */
-					// if (K<0) continue;
+					rxx=2*s_xx_avg + s_yy_avg; 
+					rxxIT=rho_ice*constant_g*thickness*(1-rho_ice/rho_seawater)/2;
 
 					/* mark the node for calving if it is beyond critical calving stress */ 
-					/* 11/14/2025: If we add the requirement that K<0 here, calving will not happen. All critical nodes found 
-					   found by the algorithm have K<0 --- now what this K is exactly is not clear to me ... */
-					if(crevassedepth>=crevasse_threshold && constraint_nodes[node->Lid()]==0. && distance<=MAX_ICEBERG_SIZE){
+					/* 11/14/2025: Floating point arithmetic leads to trouble far into the ice sheet / shelf ... must be careful 
+					               to avoid them*/
+					if(rxx/rxxIT>=1 && constraint_nodes[node->Lid()]==0. && fabs(distance)<=MAX_ICEBERG_SIZE){
 						// is_critical=true;
 						local_nflipped++; 
 						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
 						if (element->vertices[in]->x < local_min_x) {
 							local_min_x = element->vertices[in]->x;
-							_printf0_("\t------------------------------------\n");
-							_printf0_("\t\tElement ID: " << element->lid << ", Vertex index: " << in << "\n");
-							_printf0_("\t\tx=" << element->vertices[in]->x/1000 << "km, y="<<element->vertices[in]->y/1000 << "km.\n");
-							_printf0_("\t\tCD=" << crevassedepth << ", H="<<thickness << "m.\n");
-							_printf0_("\t\tUpdating min. critical x sat cd=" << crevassedepth << ", K=" << K << ".\n");
+							cout << "\t--------------- Updating Min. Critical x---------------------\n";
+							cout << "\t\tElement ID: " << element->id << ", Vertex index: " << in << "\n";
+							cout << "\t\tDistance from ice front = " << distance/1000 << "\n";
+							cout << "\t\tx=" << element->vertices[in]->x/1000 << "km, y="<<element->vertices[in]->y/1000 << "km.\n";
+							cout << "\t\tH="<<thickness << "m.\n";
+							cout << "\t\tsxx     = " << s_xx/1000 << ", syy     = " << s_yy/1000 << "\n";
+							cout << "\t\tsxx (avg) = " << s_xx_avg/1000 << ", syy (avg)= " << s_yy_avg/1000 << "\n";
+							cout << "\t\t1-rxx/rxxIT=" << 1-rxx/rxxIT << ", (avg)=" << 1-(2*s_xx_avg+s_yy_avg)/rxxIT << "\n";
+							cout << "\t\tK="<<K<<", (avg)"<<avg_K<<"\n";
+							cout << "\t\tcd=" << crevassedepth << ".\n";
 						}
 					} 
 				}
 				delete gauss;
 			}
-
+			cout << "\t\tlocal_min_x="<<local_min_x/1000<<"\n";
 			/*Count how many new nodes were found*/
 			// propagate local variable to gloabl cpu
 			// the code doesn't continue to next line until all the Allreduce calls have finished executing
@@ -1304,7 +1295,7 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 				Node* node=element->GetNode(in);
 				if (!node->IsActive()) continue;
 				
-				crevassedepth = averaged_crevassedepth[node->Lid()];
+				crevassedepth = averaged_crevassedepth[node->Sid()];
 				/* mark the interior node for calving if it is beyond critical calving stress */
 				if(constraint_nodes[node->Lid()]==1. && crevassedepth>=crevasse_threshold) n_crit = n_crit + 1.0;
 			}
@@ -1390,9 +1381,11 @@ void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
 
 		/* ===== CLEANUP P1DG AVERAGED ARRAYS (REVERT POINT) =====
 		 * Free the averaged P1DG arrays.
-		 * To revert: remove these two lines. */
+		 * To revert: remove these four lines. */
 		xDelete<IssmDouble>(averaged_crevassedepth);
 		xDelete<IssmDouble>(averaged_buttressing_k);
+		xDelete<IssmDouble>(averaged_s_xx);
+		xDelete<IssmDouble>(averaged_s_yy);
 		/* ===== END CLEANUP ===== */
 
 		xDelete<IssmDouble>(constraint_nodes);
