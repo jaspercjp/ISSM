@@ -3,1389 +3,1592 @@
 #else
 #error "Cannot compile with HAVE_CONFIG_H symbol! run configure first!"
 #endif
-#include "./LevelsetAnalysis.h"
-#include "../toolkits/toolkits.h"
-#include "../classes/classes.h"
-#include "../shared/shared.h"
-#include "../modules/modules.h"
-#include "../solutionsequences/solutionsequences.h"
 #include "../classes/Inputs/TriaInput.h"
+#include "../classes/classes.h"
+#include "../modules/modules.h"
+#include "../shared/shared.h"
+#include "../solutionsequences/solutionsequences.h"
+#include "../toolkits/toolkits.h"
+#include "./LevelsetAnalysis.h"
 #include <math.h>
 
-void LevelsetAnalysis::CreateConstraints(Constraints* constraints,IoModel* iomodel){/*{{{*/
+void LevelsetAnalysis::CreateConstraints(Constraints *constraints,
+                                         IoModel *iomodel) { /*{{{*/
 
-	/*intermediary: */
-	int finiteelement;
-	int         code,vector_layout;
-	IssmDouble *spcdata = NULL;
-	int         M,N;
+  /*intermediary: */
+  int finiteelement;
+  int code, vector_layout;
+  IssmDouble *spcdata = NULL;
+  int M, N;
 
-	/*Get finite element type for this analysis*/
-	// cout << "[LevelsetAnalysis::CreateConstraints]: Finding md.levelset.fe" << endl;
-	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
+  /*Get finite element type for this analysis*/
+  // cout << "[LevelsetAnalysis::CreateConstraints]: Finding md.levelset.fe" <<
+  // endl;
+  iomodel->FindConstant(&finiteelement, "md.levelset.fe");
 
-	/*First of, find the record for the enum, and get code  of data type: */
-	iomodel->SetFilePointerToData(&code, &vector_layout,"md.levelset.spclevelset");
-	if(code!=7)_error_("expecting a IssmDouble vector for constraints md.levelset.spclevelset");
-	if(vector_layout!=1)_error_("expecting a nodal vector for constraints md.levelset.spclevelset");
+  /*First of, find the record for the enum, and get code  of data type: */
+  iomodel->SetFilePointerToData(&code, &vector_layout,
+                                "md.levelset.spclevelset");
+  if (code != 7)
+    _error_("expecting a IssmDouble vector for constraints "
+            "md.levelset.spclevelset");
+  if (vector_layout != 1)
+    _error_("expecting a nodal vector for constraints md.levelset.spclevelset");
 
-	/*Fetch vector:*/
-	iomodel->FetchData(&spcdata,&M,&N,"md.levelset.spclevelset");
+  /*Fetch vector:*/
+  iomodel->FetchData(&spcdata, &M, &N, "md.levelset.spclevelset");
 
-	/*Call IoModelToConstraintsx*/
-	if(N>1){
-		/*If it is a time series, most likely we are forcing the ice front position and do not want to have a Dynamic Constraint*/
-		_assert_(M==iomodel->numberofvertices+1);
-		IoModelToConstraintsx(constraints,iomodel,spcdata,M,N,LevelsetAnalysisEnum,finiteelement);
-	}
-	else{
-		/*This is not a time series, we probably have calving on, we need the levelset constraints to update as the levelset moves*/
-		_assert_(N==1);
-		_assert_(M==iomodel->numberofvertices);
-		IoModelToDynamicConstraintsx(constraints,iomodel,spcdata,M,N,LevelsetAnalysisEnum,finiteelement);
-	}
+  /*Call IoModelToConstraintsx*/
+  if (N > 1) {
+    /*If it is a time series, most likely we are forcing the ice front position
+     * and do not want to have a Dynamic Constraint*/
+    _assert_(M == iomodel->numberofvertices + 1);
+    IoModelToConstraintsx(constraints, iomodel, spcdata, M, N,
+                          LevelsetAnalysisEnum, finiteelement);
+  } else {
+    /*This is not a time series, we probably have calving on, we need the
+     * levelset constraints to update as the levelset moves*/
+    _assert_(N == 1);
+    _assert_(M == iomodel->numberofvertices);
+    IoModelToDynamicConstraintsx(constraints, iomodel, spcdata, M, N,
+                                 LevelsetAnalysisEnum, finiteelement);
+  }
 
-	/*Clean up*/
-	xDelete<IssmDouble>(spcdata);
+  /*Clean up*/
+  xDelete<IssmDouble>(spcdata);
 }
 /*}}}*/
-void LevelsetAnalysis::CreateLoads(Loads* loads, IoModel* iomodel){/*{{{*/
-	return;
-}/*}}}*/
-void LevelsetAnalysis::CreateNodes(Nodes* nodes,IoModel* iomodel,bool isamr){/*{{{*/
-	int finiteelement;
-	// cout << "[LevelsetAnalysis::CreateNodes]: Finding md.levelset.fe" << endl;
-	if (!isamr)
-		iomodel->FindConstant(&finiteelement,"md.levelset.fe");
-	else 
-		// [TODO]: Somehow, using the buttress based cd law requires me to hard code finiteelement here...
-		// Otherwise, it returns an error IoModel.cpp could not find "md.levelset.fe"...
-		finiteelement = P1Enum;
-	// cout << "[LevelsetAnalysis::CreateNodes]: md.levelset.fe=" << finiteelement << endl;
-	if(iomodel->domaintype!=Domain2DhorizontalEnum) iomodel->FetchData(2,"md.mesh.vertexonbase","md.mesh.vertexonsurface");
-	::CreateNodes(nodes,iomodel,LevelsetAnalysisEnum,finiteelement);
-	iomodel->DeleteData(2,"md.mesh.vertexonbase","md.mesh.vertexonsurface");
+void LevelsetAnalysis::CreateLoads(Loads *loads, IoModel *iomodel) { /*{{{*/
+  return;
+} /*}}}*/
+void LevelsetAnalysis::CreateNodes(Nodes *nodes, IoModel *iomodel,
+                                   bool isamr) { /*{{{*/
+  int finiteelement;
+  // cout << "[LevelsetAnalysis::CreateNodes]: Finding md.levelset.fe" << endl;
+  if (!isamr)
+    iomodel->FindConstant(&finiteelement, "md.levelset.fe");
+  else
+    // [TODO]: Somehow, using the buttress based cd law requires me to hard code
+    // finiteelement here... Otherwise, it returns an error IoModel.cpp could
+    // not find "md.levelset.fe"...
+    finiteelement = P1Enum;
+  // cout << "[LevelsetAnalysis::CreateNodes]: md.levelset.fe=" << finiteelement
+  // << endl;
+  if (iomodel->domaintype != Domain2DhorizontalEnum)
+    iomodel->FetchData(2, "md.mesh.vertexonbase", "md.mesh.vertexonsurface");
+  ::CreateNodes(nodes, iomodel, LevelsetAnalysisEnum, finiteelement);
+  iomodel->DeleteData(2, "md.mesh.vertexonbase", "md.mesh.vertexonsurface");
 }
 /*}}}*/
-int  LevelsetAnalysis::DofsPerNode(int** doflist,int domaintype,int approximation){/*{{{*/
-	return 1;
+int LevelsetAnalysis::DofsPerNode(int **doflist, int domaintype,
+                                  int approximation) { /*{{{*/
+  return 1;
 }
 /*}}}*/
-void LevelsetAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoModel* iomodel,int analysis_counter,int analysis_type){/*{{{*/
+void LevelsetAnalysis::UpdateElements(Elements *elements, Inputs *inputs,
+                                      IoModel *iomodel, int analysis_counter,
+                                      int analysis_type) { /*{{{*/
 
-	/*Finite element type*/
-	int finiteelement;
-	// cout << "[UpdateElements]: FindingConstant" << endl;
-	iomodel->FindConstant(&finiteelement,"md.levelset.fe");
+  /*Finite element type*/
+  int finiteelement;
+  // cout << "[UpdateElements]: FindingConstant" << endl;
+  iomodel->FindConstant(&finiteelement, "md.levelset.fe");
 
-	/*Update elements: */
-	int counter=0;
-	for(int i=0;i<iomodel->numberofelements;i++){
-		if(iomodel->my_elements[i]){
-			Element* element=(Element*)elements->GetObjectByOffset(counter);
-			element->Update(inputs,i,iomodel,analysis_counter,analysis_type,finiteelement);
-			counter++;
-		}
-	}
+  /*Update elements: */
+  int counter = 0;
+  for (int i = 0; i < iomodel->numberofelements; i++) {
+    if (iomodel->my_elements[i]) {
+      Element *element = (Element *)elements->GetObjectByOffset(counter);
+      element->Update(inputs, i, iomodel, analysis_counter, analysis_type,
+                      finiteelement);
+      counter++;
+    }
+  }
 
-	iomodel->FetchDataToInput(inputs,elements,"md.mask.ice_levelset",MaskIceLevelsetEnum);
-	iomodel->FetchDataToInput(inputs,elements,"md.mask.ocean_levelset",MaskOceanLevelsetEnum);
-	iomodel->FetchDataToInput(inputs,elements,"md.levelset.spclevelset",SpcLevelsetEnum);
-	iomodel->FetchDataToInput(inputs,elements,"md.initialization.vx",VxEnum);
-	iomodel->FetchDataToInput(inputs,elements,"md.initialization.vy",VyEnum);
+  iomodel->FetchDataToInput(inputs, elements, "md.mask.ice_levelset",
+                            MaskIceLevelsetEnum);
+  iomodel->FetchDataToInput(inputs, elements, "md.mask.ocean_levelset",
+                            MaskOceanLevelsetEnum);
+  iomodel->FetchDataToInput(inputs, elements, "md.levelset.spclevelset",
+                            SpcLevelsetEnum);
+  iomodel->FetchDataToInput(inputs, elements, "md.initialization.vx", VxEnum);
+  iomodel->FetchDataToInput(inputs, elements, "md.initialization.vy", VyEnum);
 
-	/*Get moving front parameters*/
-	bool isstochastic;
-   int  calvinglaw;
-   bool advect_icefront = true;  // default to true
-   iomodel->FindConstant(&calvinglaw,"md.calving.law");
-   iomodel->FindConstant(&isstochastic,"md.stochasticforcing.isstochasticforcing");
+  /*Get moving front parameters*/
+  bool isstochastic;
+  int calvinglaw;
+  bool advect_icefront = true; // default to true
+  iomodel->FindConstant(&calvinglaw, "md.calving.law");
+  iomodel->FindConstant(&isstochastic,
+                        "md.stochasticforcing.isstochasticforcing");
 
-   // Check if we should disable ice front advection for crevasse depth calving
-//    if(calvinglaw == CalvingCrevasseDepthEnum){
-//        if(iomodel->FindConstant(&advect_icefront,"md.calving.advect_icefront")){
-//            advect_icefront = iomodel->FindConstant(&advect_icefront,"md.calving.advect_icefront");
-//        }
-//    }
-   switch(calvinglaw){
+  // Check if we should disable ice front advection for crevasse depth calving
+  //    if(calvinglaw == CalvingCrevasseDepthEnum){
+  //        if(iomodel->FindConstant(&advect_icefront,"md.calving.advect_icefront")){
+  //            advect_icefront =
+  //            iomodel->FindConstant(&advect_icefront,"md.calving.advect_icefront");
+  //        }
+  //    }
+  switch (calvinglaw) {
 
-		/*"Continuous" calving laws*/
-      case DefaultCalvingEnum:
-         iomodel->FetchDataToInput(inputs,elements,"md.calving.calvingrate",CalvingCalvingrateEnum);
-         if(isstochastic){
-				iomodel->FetchDataToInput(inputs,elements,"md.stochasticforcing.default_id",StochasticForcingDefaultIdEnum);
-            iomodel->FetchDataToInput(inputs,elements,"md.calving.calvingrate",BaselineCalvingCalvingrateEnum);
-         }
-         break;	
-		case CalvingLevermannEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.coeff",CalvinglevermannCoeffEnum);
-			break;
-		case CalvingVonmisesEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.stress_threshold_groundedice",CalvingStressThresholdGroundediceEnum);
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.stress_threshold_floatingice",CalvingStressThresholdFloatingiceEnum);
-			iomodel->FetchDataToInput(inputs,elements,"md.geometry.bed",BedEnum);
-			break;
-		case CalvingVonmisesADEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.basin_id",CalvingBasinIdEnum);
-			iomodel->FetchDataToInput(inputs,elements,"md.geometry.bed",BedEnum);
-			break;
-		case CalvingDev2Enum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.stress_threshold_groundedice",CalvingStressThresholdGroundediceEnum);
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.stress_threshold_floatingice",CalvingStressThresholdFloatingiceEnum);
-			break;
-		case CalvingTestEnum:
-			break;
-		case CalvingParameterizationEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.geometry.bed",BedEnum);
-			break;
-		case CalvingCalvingMIPEnum:
-			break;
+    /*"Continuous" calving laws*/
+  case DefaultCalvingEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.calvingrate",
+                              CalvingCalvingrateEnum);
+    if (isstochastic) {
+      iomodel->FetchDataToInput(inputs, elements,
+                                "md.stochasticforcing.default_id",
+                                StochasticForcingDefaultIdEnum);
+      iomodel->FetchDataToInput(inputs, elements, "md.calving.calvingrate",
+                                BaselineCalvingCalvingrateEnum);
+    }
+    break;
+  case CalvingLevermannEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.coeff",
+                              CalvinglevermannCoeffEnum);
+    break;
+  case CalvingVonmisesEnum:
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.calving.stress_threshold_groundedice",
+                              CalvingStressThresholdGroundediceEnum);
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.calving.stress_threshold_floatingice",
+                              CalvingStressThresholdFloatingiceEnum);
+    iomodel->FetchDataToInput(inputs, elements, "md.geometry.bed", BedEnum);
+    break;
+  case CalvingVonmisesADEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.basin_id",
+                              CalvingBasinIdEnum);
+    iomodel->FetchDataToInput(inputs, elements, "md.geometry.bed", BedEnum);
+    break;
+  case CalvingDev2Enum:
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.calving.stress_threshold_groundedice",
+                              CalvingStressThresholdGroundediceEnum);
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.calving.stress_threshold_floatingice",
+                              CalvingStressThresholdFloatingiceEnum);
+    break;
+  case CalvingTestEnum:
+    break;
+  case CalvingParameterizationEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.geometry.bed", BedEnum);
+    break;
+  case CalvingCalvingMIPEnum:
+    break;
 
-		/*"Discrete" calving laws (need to specify rate as 0 so that we can still solve the level set equation)*/
-		case CalvingMinthicknessEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.geometry.bed",BedEnum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingratexEnum,P1Enum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingrateyEnum,P1Enum);
-			break;
-		case CalvingHabEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.flotation_fraction",CalvingHabFractionEnum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingratexEnum,P1Enum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingrateyEnum,P1Enum);
-			break;
-		case CalvingCrevasseDepthEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.calving.water_height",WaterheightEnum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingratexEnum,P1Enum);
-			iomodel->ConstantToInput(inputs,elements,0.,CalvingrateyEnum,P1Enum);
-			break;
-		case CalvingPollardEnum:
-			break;
+  /*"Discrete" calving laws (need to specify rate as 0 so that we can still
+   * solve the level set equation)*/
+  case CalvingMinthicknessEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.geometry.bed", BedEnum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingratexEnum, P1Enum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingrateyEnum, P1Enum);
+    break;
+  case CalvingHabEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.flotation_fraction",
+                              CalvingHabFractionEnum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingratexEnum, P1Enum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingrateyEnum, P1Enum);
+    break;
+  case CalvingCrevasseDepthEnum:
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.water_height",
+                              WaterheightEnum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingratexEnum, P1Enum);
+    iomodel->ConstantToInput(inputs, elements, 0., CalvingrateyEnum, P1Enum);
+    break;
+  case CalvingPollardEnum:
+    break;
 
-		default:
-			_error_("Calving law "<<EnumToStringx(calvinglaw)<<" not supported yet");
-	}
+  default:
+    _error_("Calving law " << EnumToStringx(calvinglaw)
+                           << " not supported yet");
+  }
 
-	/*Get frontal melt parameters*/
-	int melt_parameterization;
-	iomodel->FindConstant(&melt_parameterization,"md.frontalforcings.parameterization");
-	switch(melt_parameterization){
-		case FrontalForcingsDefaultEnum:
-			iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.meltingrate",CalvingMeltingrateEnum);
-			if ((calvinglaw == CalvingParameterizationEnum) || (calvinglaw == CalvingCalvingMIPEnum)) {
-				iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.ablationrate",CalvingAblationrateEnum);
-			}
-			break;
-		case FrontalForcingsRignotEnum:
-         /*Retrieve thermal forcing only in the case of non-arma FrontalForcingsRignot*/
-         iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.thermalforcing",ThermalForcingEnum);
-         iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.basin_id",FrontalForcingsBasinIdEnum);
-         iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.subglacial_discharge",FrontalForcingsSubglacialDischargeEnum);
-			break;
-		case FrontalForcingsRignotarmaEnum:
-			bool isdischargearma;
-			iomodel->FindConstant(&isdischargearma,"md.frontalforcings.isdischargearma");
-         iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.basin_id",FrontalForcingsBasinIdEnum);
-         if(isdischargearma==false) iomodel->FetchDataToInput(inputs,elements,"md.frontalforcings.subglacial_discharge",FrontalForcingsSubglacialDischargeEnum);
-			break;	
-		default:
-			_error_("Frontal forcings"<<EnumToStringx(melt_parameterization)<<" not supported yet");
-	}
+  /*Get frontal melt parameters*/
+  int melt_parameterization;
+  iomodel->FindConstant(&melt_parameterization,
+                        "md.frontalforcings.parameterization");
+  switch (melt_parameterization) {
+  case FrontalForcingsDefaultEnum:
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.frontalforcings.meltingrate",
+                              CalvingMeltingrateEnum);
+    if ((calvinglaw == CalvingParameterizationEnum) ||
+        (calvinglaw == CalvingCalvingMIPEnum)) {
+      iomodel->FetchDataToInput(inputs, elements,
+                                "md.frontalforcings.ablationrate",
+                                CalvingAblationrateEnum);
+    }
+    break;
+  case FrontalForcingsRignotEnum:
+    /*Retrieve thermal forcing only in the case of non-arma
+     * FrontalForcingsRignot*/
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.frontalforcings.thermalforcing",
+                              ThermalForcingEnum);
+    iomodel->FetchDataToInput(inputs, elements, "md.frontalforcings.basin_id",
+                              FrontalForcingsBasinIdEnum);
+    iomodel->FetchDataToInput(inputs, elements,
+                              "md.frontalforcings.subglacial_discharge",
+                              FrontalForcingsSubglacialDischargeEnum);
+    break;
+  case FrontalForcingsRignotarmaEnum:
+    bool isdischargearma;
+    iomodel->FindConstant(&isdischargearma,
+                          "md.frontalforcings.isdischargearma");
+    iomodel->FetchDataToInput(inputs, elements, "md.frontalforcings.basin_id",
+                              FrontalForcingsBasinIdEnum);
+    if (isdischargearma == false)
+      iomodel->FetchDataToInput(inputs, elements,
+                                "md.frontalforcings.subglacial_discharge",
+                                FrontalForcingsSubglacialDischargeEnum);
+    break;
+  default:
+    _error_("Frontal forcings" << EnumToStringx(melt_parameterization)
+                               << " not supported yet");
+  }
 }
 /*}}}*/
-void LevelsetAnalysis::UpdateParameters(Parameters* parameters,IoModel* iomodel,int solution_enum,int analysis_enum){/*{{{*/
+void LevelsetAnalysis::UpdateParameters(Parameters *parameters,
+                                        IoModel *iomodel, int solution_enum,
+                                        int analysis_enum) { /*{{{*/
 
-	parameters->AddObject(iomodel->CopyConstantObject("md.levelset.stabilization",LevelsetStabilizationEnum));
-	parameters->AddObject(iomodel->CopyConstantObject("md.levelset.reinit_frequency",LevelsetReinitFrequencyEnum));
-	parameters->AddObject(iomodel->CopyConstantObject("md.levelset.kill_icebergs",LevelsetKillIcebergsEnum));
-	parameters->AddObject(iomodel->CopyConstantObject("md.levelset.migration_max",MigrationMaxEnum));
+  parameters->AddObject(iomodel->CopyConstantObject("md.levelset.stabilization",
+                                                    LevelsetStabilizationEnum));
+  parameters->AddObject(iomodel->CopyConstantObject(
+      "md.levelset.reinit_frequency", LevelsetReinitFrequencyEnum));
+  parameters->AddObject(iomodel->CopyConstantObject("md.levelset.kill_icebergs",
+                                                    LevelsetKillIcebergsEnum));
+  parameters->AddObject(iomodel->CopyConstantObject("md.levelset.migration_max",
+                                                    MigrationMaxEnum));
 
-	int  calvinglaw;
-   IssmDouble *transparam = NULL;
-   IssmDouble  yts;
-   int         N,M;
-   bool        interp,cycle;
+  int calvinglaw;
+  IssmDouble *transparam = NULL;
+  IssmDouble yts;
+  int N, M;
+  bool interp, cycle;
 
-	iomodel->FindConstant(&calvinglaw,"md.calving.law");
-	switch(calvinglaw){
-		case DefaultCalvingEnum:
-		case CalvingLevermannEnum:
-			break;
-		case CalvingVonmisesEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_thickness",CalvingMinthicknessEnum));
-			break;
-		case CalvingVonmisesADEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_thickness",CalvingMinthicknessEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.num_basins",CalvingNumberofBasinsEnum));
+  iomodel->FindConstant(&calvinglaw, "md.calving.law");
+  switch (calvinglaw) {
+  case DefaultCalvingEnum:
+  case CalvingLevermannEnum:
+    break;
+  case CalvingVonmisesEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_thickness", CalvingMinthicknessEnum));
+    break;
+  case CalvingVonmisesADEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_thickness", CalvingMinthicknessEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.num_basins", CalvingNumberofBasinsEnum));
 
-			iomodel->FetchData(&transparam,&M,&N,"md.calving.stress_threshold_groundedice");
-         _assert_(M>=1 && N>=1);
-         parameters->AddObject(new DoubleVecParam(CalvingADStressThresholdGroundediceEnum,transparam,M));
-         xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.calving.stress_threshold_groundedice");
+    _assert_(M >= 1 && N >= 1);
+    parameters->AddObject(new DoubleVecParam(
+        CalvingADStressThresholdGroundediceEnum, transparam, M));
+    xDelete<IssmDouble>(transparam);
 
-         iomodel->FetchData(&transparam,&M,&N,"md.calving.stress_threshold_floatingice");
-         _assert_(M>=1 && N>=1);
-         parameters->AddObject(new DoubleVecParam(CalvingADStressThresholdFloatingiceEnum,transparam,M));
-         xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.calving.stress_threshold_floatingice");
+    _assert_(M >= 1 && N >= 1);
+    parameters->AddObject(new DoubleVecParam(
+        CalvingADStressThresholdFloatingiceEnum, transparam, M));
+    xDelete<IssmDouble>(transparam);
 
-			break;
-		case CalvingMinthicknessEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_thickness",CalvingMinthicknessEnum));
-			break;
-		case CalvingHabEnum:
-			break;
-		case CalvingCrevasseDepthEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_opening_stress",CalvingCrevasseDepthEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.crevasse_threshold",CalvingCrevasseThresholdEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.timescale",CrevasseDepthCalvingTimescaleEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_iceberg_size",CalvingMinIcebergSizeEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.advect_icefront",CalvingAdvectIcefrontEnum));
-			// Initialize last calving time to 0
-			parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
-			// Initialize calving occurred flag to 0
-			parameters->AddObject(new DoubleParam(CalvingOccurredEnum, 0.0));
-			// Initialize propagated calving area to 0
-			parameters->AddObject(new DoubleParam(CalvingPropagatedAreaEnum, 0.0));
-			// Initialize propagated minimum x-coordinate to large value
-			parameters->AddObject(new DoubleParam(CalvingPropagatedMinXEnum, 1e20));
-			break;
-		case CalvingDev2Enum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.height_above_floatation",CalvingHeightAboveFloatationEnum));
-			break;
-		case CalvingTestEnum:
-			iomodel->FindConstant(&interp,"md.timestepping.interp_forcing");
-			iomodel->FindConstant(&cycle,"md.timestepping.cycle_forcing");
-			iomodel->FetchData(&transparam,&N,&M,"md.calving.speedfactor");
-			if(N==1){
-				_assert_(M==1);
-				parameters->AddObject(new DoubleParam(CalvingTestSpeedfactorEnum,transparam[0]));
-         }
-         else{
-            _assert_(N==2);
-            parameters->AddObject(new TransientParam(CalvingTestSpeedfactorEnum,&transparam[0],&transparam[M],interp,cycle,M));
-         }
-			xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&N,&M,"md.calving.independentrate");
-			if(N==1){
-				_assert_(M==1);
-				parameters->AddObject(new DoubleParam(CalvingTestIndependentRateEnum,transparam[0]));
-         }
-         else{
-            _assert_(N==2);
-            parameters->AddObject(new TransientParam(CalvingTestIndependentRateEnum,&transparam[0],&transparam[M],interp,cycle,M));
-         }
-			xDelete<IssmDouble>(transparam);
-			break;
-		case CalvingParameterizationEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.use_param",CalvingUseParamEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_thickness",CalvingMinthicknessEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.theta",CalvingThetaEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.alpha",CalvingAlphaEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.xoffset",CalvingXoffsetEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.yoffset",CalvingYoffsetEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.vel_lowerbound",CalvingVelLowerboundEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.vel_threshold",CalvingVelThresholdEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.vel_upperbound",CalvingVelUpperboundEnum));
-			break;
-		case CalvingPollardEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.rc",CalvingRcEnum));
-			break;
-		case CalvingCalvingMIPEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.experiment",CalvingUseParamEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.calving.min_thickness",CalvingMinthicknessEnum));
-			break;
-		default:
-			_error_("Calving law "<<EnumToStringx(calvinglaw)<<" not supported yet");
-	}
+    break;
+  case CalvingMinthicknessEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_thickness", CalvingMinthicknessEnum));
+    break;
+  case CalvingHabEnum:
+    break;
+  case CalvingCrevasseDepthEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.crevasse_opening_stress", CalvingCrevasseDepthEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.crevasse_threshold", CalvingCrevasseThresholdEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.timescale", CrevasseDepthCalvingTimescaleEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_iceberg_size", CalvingMinIcebergSizeEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.advect_icefront", CalvingAdvectIcefrontEnum));
+    // Initialize last calving time to 0
+    parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
+    // Initialize calving occurred flag to 0
+    parameters->AddObject(new DoubleParam(CalvingOccurredEnum, 0.0));
+    // Initialize propagated calving area to 0
+    parameters->AddObject(new DoubleParam(CalvingPropagatedAreaEnum, 0.0));
+    // Initialize propagated minimum x-coordinate to large value
+    parameters->AddObject(new DoubleParam(CalvingPropagatedMinXEnum, 1e20));
+    break;
+  case CalvingDev2Enum:
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.height_above_floatation",
+                                    CalvingHeightAboveFloatationEnum));
+    break;
+  case CalvingTestEnum:
+    iomodel->FindConstant(&interp, "md.timestepping.interp_forcing");
+    iomodel->FindConstant(&cycle, "md.timestepping.cycle_forcing");
+    iomodel->FetchData(&transparam, &N, &M, "md.calving.speedfactor");
+    if (N == 1) {
+      _assert_(M == 1);
+      parameters->AddObject(
+          new DoubleParam(CalvingTestSpeedfactorEnum, transparam[0]));
+    } else {
+      _assert_(N == 2);
+      parameters->AddObject(new TransientParam(CalvingTestSpeedfactorEnum,
+                                               &transparam[0], &transparam[M],
+                                               interp, cycle, M));
+    }
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &N, &M, "md.calving.independentrate");
+    if (N == 1) {
+      _assert_(M == 1);
+      parameters->AddObject(
+          new DoubleParam(CalvingTestIndependentRateEnum, transparam[0]));
+    } else {
+      _assert_(N == 2);
+      parameters->AddObject(new TransientParam(CalvingTestIndependentRateEnum,
+                                               &transparam[0], &transparam[M],
+                                               interp, cycle, M));
+    }
+    xDelete<IssmDouble>(transparam);
+    break;
+  case CalvingParameterizationEnum:
+    parameters->AddObject(iomodel->CopyConstantObject("md.calving.use_param",
+                                                      CalvingUseParamEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_thickness", CalvingMinthicknessEnum));
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.theta", CalvingThetaEnum));
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.alpha", CalvingAlphaEnum));
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.xoffset", CalvingXoffsetEnum));
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.yoffset", CalvingYoffsetEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.vel_lowerbound", CalvingVelLowerboundEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.vel_threshold", CalvingVelThresholdEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.vel_upperbound", CalvingVelUpperboundEnum));
+    break;
+  case CalvingPollardEnum:
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.calving.rc", CalvingRcEnum));
+    break;
+  case CalvingCalvingMIPEnum:
+    parameters->AddObject(iomodel->CopyConstantObject("md.calving.experiment",
+                                                      CalvingUseParamEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.min_thickness", CalvingMinthicknessEnum));
+    break;
+  default:
+    _error_("Calving law " << EnumToStringx(calvinglaw)
+                           << " not supported yet");
+  }
 
-	/*Get frontal melt parameters*/
-	int melt_parameterization;
-	iomodel->FindConstant(&melt_parameterization,"md.frontalforcings.parameterization");
-	switch(melt_parameterization){
-		case FrontalForcingsDefaultEnum:
-			break;
-		case FrontalForcingsRignotarmaEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.num_basins",FrontalForcingsNumberofBasinsEnum));
-			/*Retrieve thermal forcing parameters*/
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.num_params",FrontalForcingsNumberofParamsEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.num_breaks",FrontalForcingsNumberofBreaksEnum));
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.monthlyvals_numbreaks",FrontalForcingsNumberofMonthBreaksEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.ar_order",FrontalForcingsARMAarOrderEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.ma_order",FrontalForcingsARMAmaOrderEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.arma_timestep",FrontalForcingsARMATimestepEnum));
-         iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.polynomialparams");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMApolyparamsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.datebreaks");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAdatebreaksEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.arlag_coefs");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAarlagcoefsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.malag_coefs");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmalagcoefsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.monthlyvals_datebreaks");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmonthdatebreaksEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.monthlyvals_intercepts");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmonthinterceptsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.monthlyvals_trends");
-         parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmonthtrendsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.isdischargearma",FrontalForcingsIsDischargeARMAEnum));
-			/*Retrieve subglacial discharge parameters */
-			bool isdischargearma;
-			parameters->FindParam(&isdischargearma,FrontalForcingsIsDischargeARMAEnum);
-			if(isdischargearma==true){
-				parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.sd_num_params",FrontalForcingsSdNumberofParamsEnum));
-				parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.sd_num_breaks",FrontalForcingsSdNumberofBreaksEnum));
-      	   parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.sd_ar_order",FrontalForcingsSdarOrderEnum));
-      	   parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.sd_ma_order",FrontalForcingsSdmaOrderEnum));
-      	   parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.sd_arma_timestep",FrontalForcingsSdARMATimestepEnum));
-      	   iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.sd_polynomialparams");
-      	   parameters->AddObject(new DoubleMatParam(FrontalForcingsSdpolyparamsEnum,transparam,M,N));
-      	   xDelete<IssmDouble>(transparam);
-      	   iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.sd_datebreaks");
-      	   parameters->AddObject(new DoubleMatParam(FrontalForcingsSddatebreaksEnum,transparam,M,N));
-      	   xDelete<IssmDouble>(transparam);
-      	   iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.sd_arlag_coefs");
-      	   parameters->AddObject(new DoubleMatParam(FrontalForcingsSdarlagcoefsEnum,transparam,M,N));
-      	   xDelete<IssmDouble>(transparam);
-      	   iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.sd_malag_coefs");
-      	   parameters->AddObject(new DoubleMatParam(FrontalForcingsSdmalagcoefsEnum,transparam,M,N));
-      	   xDelete<IssmDouble>(transparam);
-				iomodel->FetchData(&transparam,&M,&N,"md.frontalforcings.sd_monthlyfrac");
-      	   parameters->AddObject(new DoubleMatParam(FrontalForcingsSdMonthlyFracEnum,transparam,M,N));
-      	   xDelete<IssmDouble>(transparam);
-			}
-			break;
-		case FrontalForcingsRignotEnum:
-			parameters->AddObject(iomodel->CopyConstantObject("md.frontalforcings.num_basins",FrontalForcingsNumberofBasinsEnum));
-			break;
-		default:
-			_error_("Frontal forcings "<<EnumToStringx(melt_parameterization)<<" not supported yet");
-	}
+  /*Get frontal melt parameters*/
+  int melt_parameterization;
+  iomodel->FindConstant(&melt_parameterization,
+                        "md.frontalforcings.parameterization");
+  switch (melt_parameterization) {
+  case FrontalForcingsDefaultEnum:
+    break;
+  case FrontalForcingsRignotarmaEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.num_basins", FrontalForcingsNumberofBasinsEnum));
+    /*Retrieve thermal forcing parameters*/
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.num_params", FrontalForcingsNumberofParamsEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.num_breaks", FrontalForcingsNumberofBreaksEnum));
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.frontalforcings.monthlyvals_numbreaks",
+                                    FrontalForcingsNumberofMonthBreaksEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.ar_order", FrontalForcingsARMAarOrderEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.ma_order", FrontalForcingsARMAmaOrderEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.arma_timestep", FrontalForcingsARMATimestepEnum));
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.frontalforcings.polynomialparams");
+    parameters->AddObject(new DoubleMatParam(FrontalForcingsARMApolyparamsEnum,
+                                             transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N, "md.frontalforcings.datebreaks");
+    parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAdatebreaksEnum,
+                                             transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N, "md.frontalforcings.arlag_coefs");
+    parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAarlagcoefsEnum,
+                                             transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N, "md.frontalforcings.malag_coefs");
+    parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmalagcoefsEnum,
+                                             transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.frontalforcings.monthlyvals_datebreaks");
+    parameters->AddObject(new DoubleMatParam(
+        FrontalForcingsARMAmonthdatebreaksEnum, transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.frontalforcings.monthlyvals_intercepts");
+    parameters->AddObject(new DoubleMatParam(
+        FrontalForcingsARMAmonthinterceptsEnum, transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    iomodel->FetchData(&transparam, &M, &N,
+                       "md.frontalforcings.monthlyvals_trends");
+    parameters->AddObject(new DoubleMatParam(FrontalForcingsARMAmonthtrendsEnum,
+                                             transparam, M, N));
+    xDelete<IssmDouble>(transparam);
+    parameters->AddObject(
+        iomodel->CopyConstantObject("md.frontalforcings.isdischargearma",
+                                    FrontalForcingsIsDischargeARMAEnum));
+    /*Retrieve subglacial discharge parameters */
+    bool isdischargearma;
+    parameters->FindParam(&isdischargearma, FrontalForcingsIsDischargeARMAEnum);
+    if (isdischargearma == true) {
+      parameters->AddObject(
+          iomodel->CopyConstantObject("md.frontalforcings.sd_num_params",
+                                      FrontalForcingsSdNumberofParamsEnum));
+      parameters->AddObject(
+          iomodel->CopyConstantObject("md.frontalforcings.sd_num_breaks",
+                                      FrontalForcingsSdNumberofBreaksEnum));
+      parameters->AddObject(iomodel->CopyConstantObject(
+          "md.frontalforcings.sd_ar_order", FrontalForcingsSdarOrderEnum));
+      parameters->AddObject(iomodel->CopyConstantObject(
+          "md.frontalforcings.sd_ma_order", FrontalForcingsSdmaOrderEnum));
+      parameters->AddObject(
+          iomodel->CopyConstantObject("md.frontalforcings.sd_arma_timestep",
+                                      FrontalForcingsSdARMATimestepEnum));
+      iomodel->FetchData(&transparam, &M, &N,
+                         "md.frontalforcings.sd_polynomialparams");
+      parameters->AddObject(new DoubleMatParam(FrontalForcingsSdpolyparamsEnum,
+                                               transparam, M, N));
+      xDelete<IssmDouble>(transparam);
+      iomodel->FetchData(&transparam, &M, &N,
+                         "md.frontalforcings.sd_datebreaks");
+      parameters->AddObject(new DoubleMatParam(FrontalForcingsSddatebreaksEnum,
+                                               transparam, M, N));
+      xDelete<IssmDouble>(transparam);
+      iomodel->FetchData(&transparam, &M, &N,
+                         "md.frontalforcings.sd_arlag_coefs");
+      parameters->AddObject(new DoubleMatParam(FrontalForcingsSdarlagcoefsEnum,
+                                               transparam, M, N));
+      xDelete<IssmDouble>(transparam);
+      iomodel->FetchData(&transparam, &M, &N,
+                         "md.frontalforcings.sd_malag_coefs");
+      parameters->AddObject(new DoubleMatParam(FrontalForcingsSdmalagcoefsEnum,
+                                               transparam, M, N));
+      xDelete<IssmDouble>(transparam);
+      iomodel->FetchData(&transparam, &M, &N,
+                         "md.frontalforcings.sd_monthlyfrac");
+      parameters->AddObject(new DoubleMatParam(FrontalForcingsSdMonthlyFracEnum,
+                                               transparam, M, N));
+      xDelete<IssmDouble>(transparam);
+    }
+    break;
+  case FrontalForcingsRignotEnum:
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.frontalforcings.num_basins", FrontalForcingsNumberofBasinsEnum));
+    break;
+  default:
+    _error_("Frontal forcings " << EnumToStringx(melt_parameterization)
+                                << " not supported yet");
+  }
 }
 /*}}}*/
 
 /*Finite element Analysis*/
-void           LevelsetAnalysis::Core(FemModel* femmodel){/*{{{*/
-
-	/*parameters: */
-	int  stabilization;
-	femmodel->parameters->FindParam(&stabilization,LevelsetStabilizationEnum);
-
-	/*activate formulation: */
-	femmodel->SetCurrentConfiguration(LevelsetAnalysisEnum);
-
-	if(VerboseSolution()) _printf0_("   call computational core:\n");
-	if(stabilization==4){
-		solutionsequence_fct(femmodel);
-	}
-	else{
-		solutionsequence_linear(femmodel);
-	}
-}/*}}}*/
-void           LevelsetAnalysis::PreCore(FemModel* femmodel){/*{{{*/
-	_error_("not implemented");
-}/*}}}*/
-ElementVector* LevelsetAnalysis::CreateDVector(Element* element){/*{{{*/
-	/*Default, return NULL*/
-	return NULL;
-}/*}}}*/
-ElementMatrix* LevelsetAnalysis::CreateJacobianMatrix(Element* element){/*{{{*/
-	/* Jacobian required for the Newton solver */
-	_error_("not implemented yet");
-}/*}}}*/
-ElementMatrix* LevelsetAnalysis::CreateKMatrix(Element* element){/*{{{*/
-
-	if(!element->IsOnBase()) return NULL;
-	Element* basalelement = element->SpawnBasalElement();
-
-	/*Intermediaries */
-	int  stabilization,dim,domaintype;
-	int i,j,k,row, col;
-	IssmDouble kappa,factor;
-	IssmDouble Jdet, dt, D_scalar;
-	IssmDouble h,hx,hy,hz;
-	IssmDouble vel,w[3];
-	IssmDouble migrationmax;
-	IssmDouble* xyz_list = NULL;
-
-	/*Get problem dimension and whether there is moving front or not*/
-	basalelement->FindParam(&domaintype,DomainTypeEnum);
-	basalelement->FindParam(&stabilization,LevelsetStabilizationEnum);
-	switch(domaintype){
-		case Domain2DverticalEnum:   dim = 1; break;
-		case Domain2DhorizontalEnum: dim = 2; break;
-		case Domain3DEnum:           dim = 2; break;
-		default: _error_("mesh "<<EnumToStringx(domaintype)<<" not supported yet");
-	}
-	/*Fetch number of nodes and dof for this finite element*/
-	int numnodes    = basalelement->GetNumberOfNodes();
-
-	/*Initialize Element vector and other vectors*/
-	ElementMatrix* Ke       = basalelement->NewElementMatrix();
-	IssmDouble*    basis    = xNew<IssmDouble>(numnodes);
-	IssmDouble*    dbasis   = xNew<IssmDouble>(2*numnodes);
-
-	/*Retrieve all inputs and parameters*/
-	basalelement->GetVerticesCoordinates(&xyz_list);
-	basalelement->FindParam(&dt,TimesteppingTimeStepEnum);
-	basalelement->FindParam(&migrationmax,MigrationMaxEnum);
-
-	h = basalelement->CharacteristicLength();
-
-	Input* mf_vx_input        = NULL;
-	Input* mf_vy_input        = NULL;
-
-	/*Load velocities*/
-	switch(domaintype){
-		case Domain2DverticalEnum:
-			mf_vx_input=basalelement->GetInput(MovingFrontalVxEnum); _assert_(mf_vx_input);
-			break;
-		case Domain2DhorizontalEnum:
-			mf_vx_input=basalelement->GetInput(MovingFrontalVxEnum); _assert_(mf_vx_input);
-			mf_vy_input=basalelement->GetInput(MovingFrontalVyEnum); _assert_(mf_vy_input);
-			break;
-		case Domain3DEnum:
-			mf_vx_input=basalelement->GetInput(MovingFrontalVxEnum); _assert_(mf_vx_input);
-			mf_vy_input=basalelement->GetInput(MovingFrontalVyEnum); _assert_(mf_vy_input);
-			break;
-		default: _error_("mesh "<<EnumToStringx(domaintype)<<" not supported yet");
-	}
-
-	/* Start  looping on the number of gaussian points: */
-	Gauss* gauss=basalelement->NewGauss(2);
-	while(gauss->next()){
-
-		basalelement->JacobianDeterminant(&Jdet,xyz_list,gauss);
-		basalelement->NodalFunctions(basis,gauss);
-		basalelement->NodalFunctionsDerivatives(dbasis,xyz_list,gauss);
-		D_scalar=gauss->weight*Jdet;
-
-		/* Transient */
-		if(dt!=0.){
-			for(i=0;i<numnodes;i++){
-				for(j=0;j<numnodes;j++){
-					Ke->values[i*numnodes+j] += D_scalar*basis[j]*basis[i];
-				}
-			}
-			D_scalar=D_scalar*dt;
-		}
-
-		/* Levelset speed */
-		mf_vx_input->GetInputValue(&w[0], gauss);
-		mf_vy_input->GetInputValue(&w[1], gauss);
-
-		/* Apply limiter to the migration rate */		
-		vel = 0.;
-		for(i=0;i<dim;i++) vel += w[i]*w[i];
-		vel = sqrt(vel)+1e-14;
-		/* !!NOTE: This is different from the previous version 25838 (and before). The current threshold restrict both advance and retreat velocity. */
-		if (vel > migrationmax) {
-			for(i=0;i<dim;i++) w[i] = w[i]/vel*migrationmax;
-		}
-
-		/*Compute D*/
-		for(i=0;i<numnodes;i++){
-			for(j=0;j<numnodes;j++){
-				for(k=0;k<dim;k++){
-					Ke->values[i*numnodes+j] += D_scalar*w[k]*dbasis[k*numnodes+j]*basis[i];
-				}
-			}
-		}
-
-		/* Stabilization */
-		vel=0.;
-		for(i=0;i<dim;i++) vel+=w[i]*w[i];
-		vel=sqrt(vel)+1.e-14;
-		switch(stabilization){
-			case 0:
-				/*Nothing to be done*/
-				break;
-			case 1:
-				/* Artificial Diffusion */
-				basalelement->ElementSizes(&hx,&hy,&hz);
-				h=sqrt( pow(hx*w[0]/vel,2) + pow(hy*w[1]/vel,2) );
-				kappa=h*vel/2.;
-				for(i=0;i<numnodes;i++){
-					for(j=0;j<numnodes;j++){
-						for(k=0;k<dim;k++){
-							Ke->values[i*numnodes+j] += D_scalar*kappa*dbasis[k*numnodes+j]*dbasis[k*numnodes+i];
-						}
-					}
-				}
-				break;
-			case 2:
-				  {
-					/* Streamline Upwinding */
-					mf_vx_input->GetInputAverage(&w[0]);
-					mf_vy_input->GetInputAverage(&w[1]);
-					vel=sqrt(w[0]*w[0]+w[1]*w[1])+1.e-8;
-					IssmDouble tau=h/(2*vel);
-					factor = dt*gauss->weight*Jdet*tau;
-					for(int i=0;i<numnodes;i++){
-						for(int j=0;j<numnodes;j++){
-							Ke->values[i*numnodes+j]+=factor*(
-										w[0]*dbasis[0*numnodes+i]+w[1]*dbasis[1*numnodes+i])*(w[0]*dbasis[0*numnodes+j]+w[1]*dbasis[1*numnodes+j]);
-						}
-					}
-				  }
-				break;
-			case 5:{
-				/*SUPG*/
-				IssmDouble vx,vy;
-				mf_vx_input->GetInputAverage(&vx);
-				mf_vy_input->GetInputAverage(&vy);
-				vel=sqrt(vx*vx+vy*vy)+1.e-8;
-				IssmPDouble xi=1.;
-				IssmDouble  tau=xi*h/(2*vel);
-
-				/*Mass matrix - part 2*/
-				factor = gauss->weight*Jdet*tau;
-				for(int i=0;i<numnodes;i++){
-					for(int j=0;j<numnodes;j++){
-						Ke->values[i*numnodes+j]+=factor*basis[j]*(vx*dbasis[0*numnodes+i]+vy*dbasis[1*numnodes+i]);
-					}
-				}
-
-				/*Advection matrix - part 2, A*/
-				factor = dt*gauss->weight*Jdet*tau;
-				for(int i=0;i<numnodes;i++){
-					for(int j=0;j<numnodes;j++){
-						Ke->values[i*numnodes+j]+=factor*(vx*dbasis[0*numnodes+j]+vy*dbasis[1*numnodes+j])*(vx*dbasis[0*numnodes+i]+vy*dbasis[1*numnodes+i]);
-					}
-				}
-
-				break;
-			}
-			case 6:{
-				/*SUPG*/
-				IssmDouble vx,vy;
-				mf_vx_input->GetInputAverage(&vx);
-				mf_vy_input->GetInputAverage(&vy);
-				vel=sqrt(vx*vx+vy*vy)+1.e-8;
-				IssmDouble ECN, K;
-				ECN = vel *dt /h;
-				K = 1./tanh(ECN) - 1./ECN;
-//				if (ECN<1e-6) K = ECN /3.0;
-
-				/*According to Hilmar, xi=K is too large*/
-				IssmDouble xi=0.1*K;
-
-				IssmDouble  tau=xi*h/(2*vel);
-				Input* levelset_input = NULL;
-
-				IssmDouble kappa;
-				IssmDouble p=4, q=4;
-				IssmDouble phi[3];
-
-			   levelset_input=basalelement->GetInput(MaskIceLevelsetEnum); _assert_(levelset_input);
-				levelset_input->GetInputValue(&phi[0], gauss);
-
-				IssmDouble dphidx=0., dphidy=0.;
-				IssmDouble nphi;
-
-				for(int i=0;i<numnodes;i++){
-					dphidx += phi[i]*dbasis[0*numnodes+i];
-					dphidy += phi[i]*dbasis[1*numnodes+i];
-				}
-				nphi = sqrt(dphidx*dphidx+dphidy*dphidy);
-
-				if (nphi >= 1) {
-					kappa = 1 - 1.0/nphi;
-				}
-				else {
-					kappa = 0.5/M_PI *sin(2*M_PI*nphi)/nphi;
-				}
-
-				kappa = kappa * vel / h;
-
-				/*Mass matrix - part 2*/
-				factor = gauss->weight*Jdet*tau;
-				for(int i=0;i<numnodes;i++){
-					for(int j=0;j<numnodes;j++){
-						Ke->values[i*numnodes+j]+=factor*basis[j]*(vx*dbasis[0*numnodes+i]+vy*dbasis[1*numnodes+i]);
-					}
-				}
-
-				/*Advection matrix - part 2, A*/
-				factor = dt*gauss->weight*Jdet*tau;
-				for(int i=0;i<numnodes;i++){
-					for(int j=0;j<numnodes;j++){
-						Ke->values[i*numnodes+j]+=factor*(vx*dbasis[0*numnodes+j]+vy*dbasis[1*numnodes+j])*(vx*dbasis[0*numnodes+i]+vy*dbasis[1*numnodes+i]);
-					}
-				}
-				/*Add the pertubation term \nabla\cdot(\kappa*\nabla\phi)*/
-				factor = dt*gauss->weight*Jdet*kappa;
-				for(int i=0;i<numnodes;i++){
-					for(int j=0;j<numnodes;j++){
-						for(int k=0;k<dim;k++){
-								Ke->values[i*numnodes+j]+= factor*dbasis[k*numnodes+j]*dbasis[k*numnodes+i];
-						}
-					}
-				}
-
-				break;
-			}
-			default:
-				_error_("unknown type of stabilization in LevelsetAnalysis.cpp");
-		}
-	}
-
-	/*Clean up and return*/
-	xDelete<IssmDouble>(xyz_list);
-	xDelete<IssmDouble>(basis);
-	xDelete<IssmDouble>(dbasis);
-	delete gauss;
-	if(basalelement->IsSpawnedElement()){basalelement->DeleteMaterials(); delete basalelement;};
-	return Ke;
-}/*}}}*/
-ElementVector* LevelsetAnalysis::CreatePVector(Element* element){/*{{{*/
-
-	if(!element->IsOnBase()) return NULL;
-	Element* basalelement = element->SpawnBasalElement();
-
-	/*Intermediaries */
-	int         domaintype,stabilization;
-	IssmDouble  Jdet,dt;
-	IssmDouble  lsf;
-	IssmDouble* xyz_list = NULL;
-
-	/*Fetch number of nodes and dof for this finite element*/
-	int numnodes = basalelement->GetNumberOfNodes();
-	basalelement->FindParam(&stabilization,LevelsetStabilizationEnum);
-
-	/*Initialize Element vector*/
-	ElementVector* pe = basalelement->NewElementVector();
-	basalelement->FindParam(&dt,TimesteppingTimeStepEnum); _assert_(dt>0.);
-
-	/*Initialize basis vector*/
-	IssmDouble*    basis = xNew<IssmDouble>(numnodes);
-	IssmDouble*    dbasis = NULL;
-	if((stabilization==5) |(stabilization == 6)) dbasis= xNew<IssmDouble>(2*numnodes);
-
-	/*Retrieve all inputs and parameters*/
-	basalelement->GetVerticesCoordinates(&xyz_list);
-	Input* levelset_input = basalelement->GetInput(MaskIceLevelsetEnum); _assert_(levelset_input);
-	Input* mf_vx_input    = basalelement->GetInput(MovingFrontalVxEnum); _assert_(mf_vx_input);
-	Input* mf_vy_input    = basalelement->GetInput(MovingFrontalVyEnum); _assert_(mf_vy_input);
-
-	IssmDouble h=basalelement->CharacteristicLength();
-
-	/* Start  looping on the number of gaussian points: */
-	Gauss* gauss=basalelement->NewGauss(2);
-	while(gauss->next()){
-		basalelement->JacobianDeterminant(&Jdet,xyz_list,gauss);
-		basalelement->NodalFunctions(basis,gauss);
-
-		/* old function value */
-		levelset_input->GetInputValue(&lsf,gauss);
-		IssmDouble factor = Jdet*gauss->weight*lsf;
-		for(int i=0;i<numnodes;i++) pe->values[i]+=factor*basis[i];
-
-		if(stabilization==5){ /*SUPG*/
-			IssmDouble vx,vy,vel;
-			basalelement->NodalFunctionsDerivatives(dbasis,xyz_list,gauss);
-			mf_vx_input->GetInputAverage(&vx);
-			mf_vy_input->GetInputAverage(&vy);
-			vel=sqrt(vx*vx+vy*vy)+1.e-8;
-			IssmPDouble xi=1.;
-			IssmDouble  tau=xi*h/(2*vel);
-
-			/*Force vector - part 2*/
-			factor = Jdet*gauss->weight*lsf;
-			for(int i=0;i<numnodes;i++){
-				pe->values[i]+=factor*(tau*vx*dbasis[0*numnodes+i]+tau*vy*dbasis[1*numnodes+i]);
-			}
-		}
-		else if (stabilization ==6) {
-			IssmDouble vx,vy,vel;
-			basalelement->NodalFunctionsDerivatives(dbasis,xyz_list,gauss);
-			mf_vx_input->GetInputAverage(&vx);
-			mf_vy_input->GetInputAverage(&vy);
-			vel=sqrt(vx*vx+vy*vy)+1.e-8;
-
-			IssmDouble ECN, K;
-			ECN = vel *dt /h;
-			K = 1./tanh(ECN) - 1./ECN;
-	//		if (ECN<1e-6) K = ECN /3.0;
-
-			/*According to Hilmar, xi=K is too large*/
-			IssmDouble xi=0.1*K;
-
-			IssmDouble  tau=xi*h/(2*vel);
-
-			/*Force vector - part 2*/
-			factor = Jdet*gauss->weight*lsf*tau;
-			for(int i=0;i<numnodes;i++){
-				pe->values[i]+=factor*(vx*dbasis[0*numnodes+i]+vy*dbasis[1*numnodes+i]);
-			}
-		}
-	}
-
-	/*Clean up and return*/
-	xDelete<IssmDouble>(xyz_list);
-	xDelete<IssmDouble>(basis);
-	xDelete<IssmDouble>(dbasis);
-	basalelement->FindParam(&domaintype,DomainTypeEnum);
-	if(basalelement->IsSpawnedElement()){basalelement->DeleteMaterials(); delete basalelement;};
-	delete gauss;
-
-	return pe;
-}/*}}}*/
-IssmDouble     LevelsetAnalysis::GetDistanceToStraight(IssmDouble* q, IssmDouble* s0, IssmDouble* s1){/*{{{*/
-	// returns distance d of point q to straight going through points s0, s1
-	// d=|a x b|/|b|
-	// with a=q-s0, b=s1-s0
-
-	/* Intermediaries */
-	const int dim=2;
-	int i;
-	IssmDouble a[dim], b[dim];
-	IssmDouble norm_b;
-
-	for(i=0;i<dim;i++){
-		a[i]=q[i]-s0[i];
-		b[i]=s1[i]-s0[i];
-	}
-
-	norm_b=0.;
-	for(i=0;i<dim;i++)
-	 norm_b+=b[i]*b[i];
-	norm_b=sqrt(norm_b);
-	_assert_(norm_b>0.);
-
-	return fabs(a[0]*b[1]-a[1]*b[0])/norm_b;
-}/*}}}*/
-void           LevelsetAnalysis::GetSolutionFromInputs(Vector<IssmDouble>* solution,Element* element){/*{{{*/
-	element->GetSolutionFromInputsOneDof(solution,MaskIceLevelsetEnum);
-}/*}}}*/
-void           LevelsetAnalysis::GradientJ(Vector<IssmDouble>* gradient,Element*  element,int control_type,int control_interp,int control_index){/*{{{*/
-	_error_("Not implemented yet");
-}/*}}}*/
-void           LevelsetAnalysis::InputUpdateFromSolution(IssmDouble* solution,Element* element){/*{{{*/
-
-	int domaintype;
-	element->FindParam(&domaintype,DomainTypeEnum);
-	switch(domaintype){
-		case Domain2DhorizontalEnum:
-			element->InputUpdateFromSolutionOneDof(solution,MaskIceLevelsetEnum);
-			break;
-		case Domain3DEnum:
-			element->InputUpdateFromSolutionOneDofCollapsed(solution,MaskIceLevelsetEnum);
-			break;
-		default: _error_("mesh "<<EnumToStringx(domaintype)<<" not supported yet");
-	}
-}/*}}}*/
-void           LevelsetAnalysis::PostProcess(FemModel* femmodel){/*{{{*/
-
-	/*This function is only used by "discrete calving laws" for which we change
-	 * the value of the levelset after the advection step (level set equation
-	 * solve) based on the law*/
-
-	/*Intermediaries*/
-	int  calvinglaw;
-	IssmDouble newlevelset[6];
-	femmodel->parameters->FindParam(&calvinglaw,CalvingLawEnum);
-
-	/*Apply minimum thickness criterion*/
-	if(calvinglaw==CalvingMinthicknessEnum || calvinglaw==CalvingVonmisesEnum || calvinglaw==CalvingParameterizationEnum || calvinglaw==CalvingVonmisesADEnum || calvinglaw==CalvingCalvingMIPEnum){
-
-		IssmDouble mig_max = femmodel->parameters->FindParam(MigrationMaxEnum);
-		IssmDouble dt      = femmodel->parameters->FindParam(TimesteppingTimeStepEnum);
-
-		/*Get current distance to terminus*/
-		InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
-		femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0,DistanceToCalvingfrontEnum);
-
-		/*Intermediaries*/
-		IssmDouble thickness,bed,sealevel,distance,levelset;
-		IssmDouble min_thickness = femmodel->parameters->FindParam(CalvingMinthicknessEnum);
-
-		/*Loop over all elements of this partition*/
-		for(Object* & object : femmodel->elements->objects){
-			Element* element  = xDynamicCast<Element*>(object);
-
-			/*no need to postprocess an ice free element*/
-			if(!element->IsIceInElement()) continue;
-
-			int      numnodes     = element->GetNumberOfNodes(); _assert_(numnodes<7);
-			Gauss*   gauss        = element->NewGauss();
-			Input *H_input        = element->GetInput(ThicknessEnum);              _assert_(H_input);
-			Input *b_input        = element->GetInput(BedEnum);                    _assert_(b_input);
-			Input *sl_input       = element->GetInput(SealevelEnum);               _assert_(sl_input);
-			Input *dis_input      = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
-			Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);        _assert_(levelset_input);
-
-			/*Potentially constrain nodes of this element*/
-			for(int in=0;in<numnodes;in++){
-				gauss->GaussNode(element->GetElementType(),in);
-
-				levelset_input->GetInputValue(&levelset,gauss);
-				H_input->GetInputValue(&thickness,gauss);
-				b_input->GetInputValue(&bed,gauss);
-				sl_input->GetInputValue(&sealevel,gauss);
-				dis_input->GetInputValue(&distance,gauss);
-
-				if(thickness<min_thickness && bed<sealevel && fabs(distance)<mig_max*dt && levelset<0){
-					newlevelset[in] = +400.; //Arbitrary > 0 number (i.e. deactivate this node)
-				}
-				else{
-					newlevelset[in] = levelset;
-				}
-			}
-			element->AddInput(MaskIceLevelsetEnum,&newlevelset[0],element->GetElementType());
-			delete gauss;
-		}
-	}
-}/*}}}*/
-void           LevelsetAnalysis::UpdateConstraints(FemModel* femmodel){/*{{{*/
-
-	/*Intermediaries*/
-	int  calvinglaw;
-	IssmDouble yts;
-	femmodel->parameters->FindParam(&yts, ConstantsYtsEnum);
-	femmodel->parameters->FindParam(&calvinglaw,CalvingLawEnum);
-	IssmDouble mig_max = femmodel->parameters->FindParam(MigrationMaxEnum);
-	IssmDouble dt      = femmodel->parameters->FindParam(TimesteppingTimeStepEnum);
-
-   /* Get current distance to terminus
-	 * Only do this if necessary, PostProcess is already doing it for a few calving law
-	 * Do not repeat the process is this function is particularly slow*/
-	bool computedistance = true;
-	if(
-				calvinglaw==CalvingMinthicknessEnum ||
-				calvinglaw==CalvingVonmisesEnum ||
-				calvinglaw==CalvingParameterizationEnum ||
-				calvinglaw==CalvingVonmisesADEnum ||
-				calvinglaw==CalvingCalvingMIPEnum){
-		int step;
-		femmodel->parameters->FindParam(&step,StepEnum);
-		if(step>1){
-			computedistance = false;
-		}
-	}
-	if(computedistance){
-		InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
-		femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0,DistanceToCalvingfrontEnum);
-	}
-
-   if(calvinglaw==CalvingHabEnum){
-
-		/*Intermediaries*/
-		IssmDouble  thickness,water_depth,distance,hab_fraction;
-
-		/*Loop over all elements of this partition*/
-		for(Object* & object : femmodel->elements->objects){
-			Element* element  = xDynamicCast<Element*>(object);
-
-			IssmDouble rho_ice   = element->FindParam(MaterialsRhoIceEnum);
-			IssmDouble rho_water = element->FindParam(MaterialsRhoSeawaterEnum);
-
-			int      numnodes           = element->GetNumberOfNodes();
-			Gauss*   gauss              = element->NewGauss();
-			Input*   H_input            = element->GetInput(ThicknessEnum); _assert_(H_input);
-			Input*   bed_input          = element->GetInput(BedEnum); _assert_(bed_input);
-			Input*   hab_fraction_input = element->GetInput(CalvingHabFractionEnum); _assert_(hab_fraction_input);
-			Input*   dis_input           = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
-
-			/*Potentially constrain nodes of this element*/
-			for(int in=0;in<numnodes;in++){
-				gauss->GaussNode(element->GetElementType(),in);
-				Node* node=element->GetNode(in);
-				if(!node->IsActive()) continue;
-
-				H_input->GetInputValue(&thickness,gauss);
-				bed_input->GetInputValue(&water_depth,gauss);
-				dis_input->GetInputValue(&distance,gauss);
-				hab_fraction_input->GetInputValue(&hab_fraction,gauss);
-
-				if(thickness<((rho_water/rho_ice)*(1+hab_fraction)*-water_depth) && fabs(distance)<mig_max*dt){
-					node->ApplyConstraint(0,+1.);
-				}
-				else {
-					/* no ice, set no spc */
-					node->DofInFSet(0);
-				}
-			}
-			delete gauss;
-		}
-	}
-   else if(calvinglaw==CalvingCrevasseDepthEnum){
-		/*Intermediaries*/
-		IssmDouble MAX_ICEBERG_SIZE=6e3;
-		IssmDouble crevassedepth, crevassedepth_avg; 
-		IssmDouble bed,surface_crevasse,thickness,surface,distance;
-		IssmDouble K, avg_K;
-		IssmDouble levelset, ocean_levelset;
-		IssmDouble s_xx,s_yy,rxx,rxxIT, s_xx_avg, s_yy_avg;
-		IssmDouble max_distance = 0.0;
-		IssmDouble* constraint_nodes = NULL;
-		IssmDouble time, time_step;
-		bool advect_icefront; 
-
-		femmodel->parameters->FindParam(&time, TimeEnum);
-		femmodel->parameters->FindParam(&time_step, TimesteppingTimeStepEnum);
-
-		time = time / yts; // Convert from seconds to year
-		time_step = time_step / yts;
-
-		// Get the last time the algorithm checked for calving 
-        IssmDouble last_calving_time = 0.0;  
-        IssmDouble calving_timescale = 0.0;  
-
-		// read the last calving time if it exists
-        if(femmodel->parameters->Exist(LastCalvingTimeEnum)){  
-            femmodel->parameters->FindParam(&last_calving_time,LastCalvingTimeEnum);  
-        }  else {
-			femmodel -> parameters -> AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
-		}
-
-		// get the calving time scale 
-        if(femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum)){  
-            femmodel->parameters->FindParam(&calving_timescale,CrevasseDepthCalvingTimescaleEnum);  
+void LevelsetAnalysis::Core(FemModel *femmodel) { /*{{{*/
+
+  /*parameters: */
+  int stabilization;
+  femmodel->parameters->FindParam(&stabilization, LevelsetStabilizationEnum);
+
+  /*activate formulation: */
+  femmodel->SetCurrentConfiguration(LevelsetAnalysisEnum);
+
+  if (VerboseSolution())
+    _printf0_("   call computational core:\n");
+  if (stabilization == 4) {
+    solutionsequence_fct(femmodel);
+  } else {
+    solutionsequence_linear(femmodel);
+  }
+} /*}}}*/
+void LevelsetAnalysis::PreCore(FemModel *femmodel) { /*{{{*/
+  _error_("not implemented");
+} /*}}}*/
+ElementVector *LevelsetAnalysis::CreateDVector(Element *element) { /*{{{*/
+  /*Default, return NULL*/
+  return NULL;
+} /*}}}*/
+ElementMatrix *
+LevelsetAnalysis::CreateJacobianMatrix(Element *element) { /*{{{*/
+  /* Jacobian required for the Newton solver */
+  _error_("not implemented yet");
+} /*}}}*/
+ElementMatrix *LevelsetAnalysis::CreateKMatrix(Element *element) { /*{{{*/
+
+  if (!element->IsOnBase())
+    return NULL;
+  Element *basalelement = element->SpawnBasalElement();
+
+  /*Intermediaries */
+  int stabilization, dim, domaintype;
+  int i, j, k, row, col;
+  IssmDouble kappa, factor;
+  IssmDouble Jdet, dt, D_scalar;
+  IssmDouble h, hx, hy, hz;
+  IssmDouble vel, w[3];
+  IssmDouble migrationmax;
+  IssmDouble *xyz_list = NULL;
+
+  /*Get problem dimension and whether there is moving front or not*/
+  basalelement->FindParam(&domaintype, DomainTypeEnum);
+  basalelement->FindParam(&stabilization, LevelsetStabilizationEnum);
+  switch (domaintype) {
+  case Domain2DverticalEnum:
+    dim = 1;
+    break;
+  case Domain2DhorizontalEnum:
+    dim = 2;
+    break;
+  case Domain3DEnum:
+    dim = 2;
+    break;
+  default:
+    _error_("mesh " << EnumToStringx(domaintype) << " not supported yet");
+  }
+  /*Fetch number of nodes and dof for this finite element*/
+  int numnodes = basalelement->GetNumberOfNodes();
+
+  /*Initialize Element vector and other vectors*/
+  ElementMatrix *Ke = basalelement->NewElementMatrix();
+  IssmDouble *basis = xNew<IssmDouble>(numnodes);
+  IssmDouble *dbasis = xNew<IssmDouble>(2 * numnodes);
+
+  /*Retrieve all inputs and parameters*/
+  basalelement->GetVerticesCoordinates(&xyz_list);
+  basalelement->FindParam(&dt, TimesteppingTimeStepEnum);
+  basalelement->FindParam(&migrationmax, MigrationMaxEnum);
+
+  h = basalelement->CharacteristicLength();
+
+  Input *mf_vx_input = NULL;
+  Input *mf_vy_input = NULL;
+
+  /*Load velocities*/
+  switch (domaintype) {
+  case Domain2DverticalEnum:
+    mf_vx_input = basalelement->GetInput(MovingFrontalVxEnum);
+    _assert_(mf_vx_input);
+    break;
+  case Domain2DhorizontalEnum:
+    mf_vx_input = basalelement->GetInput(MovingFrontalVxEnum);
+    _assert_(mf_vx_input);
+    mf_vy_input = basalelement->GetInput(MovingFrontalVyEnum);
+    _assert_(mf_vy_input);
+    break;
+  case Domain3DEnum:
+    mf_vx_input = basalelement->GetInput(MovingFrontalVxEnum);
+    _assert_(mf_vx_input);
+    mf_vy_input = basalelement->GetInput(MovingFrontalVyEnum);
+    _assert_(mf_vy_input);
+    break;
+  default:
+    _error_("mesh " << EnumToStringx(domaintype) << " not supported yet");
+  }
+
+  /* Start  looping on the number of gaussian points: */
+  Gauss *gauss = basalelement->NewGauss(2);
+  while (gauss->next()) {
+
+    basalelement->JacobianDeterminant(&Jdet, xyz_list, gauss);
+    basalelement->NodalFunctions(basis, gauss);
+    basalelement->NodalFunctionsDerivatives(dbasis, xyz_list, gauss);
+    D_scalar = gauss->weight * Jdet;
+
+    /* Transient */
+    if (dt != 0.) {
+      for (i = 0; i < numnodes; i++) {
+        for (j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] += D_scalar * basis[j] * basis[i];
         }
-		// cout << "Calving timescale= " << calving_timescale << endl;
+      }
+      D_scalar = D_scalar * dt;
+    }
+
+    /* Levelset speed */
+    mf_vx_input->GetInputValue(&w[0], gauss);
+    mf_vy_input->GetInputValue(&w[1], gauss);
+
+    /* Apply limiter to the migration rate */
+    vel = 0.;
+    for (i = 0; i < dim; i++)
+      vel += w[i] * w[i];
+    vel = sqrt(vel) + 1e-14;
+    /* !!NOTE: This is different from the previous version 25838 (and before).
+     * The current threshold restrict both advance and retreat velocity. */
+    if (vel > migrationmax) {
+      for (i = 0; i < dim; i++)
+        w[i] = w[i] / vel * migrationmax;
+    }
+
+    /*Compute D*/
+    for (i = 0; i < numnodes; i++) {
+      for (j = 0; j < numnodes; j++) {
+        for (k = 0; k < dim; k++) {
+          Ke->values[i * numnodes + j] +=
+              D_scalar * w[k] * dbasis[k * numnodes + j] * basis[i];
+        }
+      }
+    }
+
+    /* Stabilization */
+    vel = 0.;
+    for (i = 0; i < dim; i++)
+      vel += w[i] * w[i];
+    vel = sqrt(vel) + 1.e-14;
+    switch (stabilization) {
+    case 0:
+      /*Nothing to be done*/
+      break;
+    case 1:
+      /* Artificial Diffusion */
+      basalelement->ElementSizes(&hx, &hy, &hz);
+      h = sqrt(pow(hx * w[0] / vel, 2) + pow(hy * w[1] / vel, 2));
+      kappa = h * vel / 2.;
+      for (i = 0; i < numnodes; i++) {
+        for (j = 0; j < numnodes; j++) {
+          for (k = 0; k < dim; k++) {
+            Ke->values[i * numnodes + j] += D_scalar * kappa *
+                                            dbasis[k * numnodes + j] *
+                                            dbasis[k * numnodes + i];
+          }
+        }
+      }
+      break;
+    case 2: {
+      /* Streamline Upwinding */
+      mf_vx_input->GetInputAverage(&w[0]);
+      mf_vy_input->GetInputAverage(&w[1]);
+      vel = sqrt(w[0] * w[0] + w[1] * w[1]) + 1.e-8;
+      IssmDouble tau = h / (2 * vel);
+      factor = dt * gauss->weight * Jdet * tau;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] += factor *
+                                          (w[0] * dbasis[0 * numnodes + i] +
+                                           w[1] * dbasis[1 * numnodes + i]) *
+                                          (w[0] * dbasis[0 * numnodes + j] +
+                                           w[1] * dbasis[1 * numnodes + j]);
+        }
+      }
+    } break;
+    case 5: {
+      /*SUPG*/
+      IssmDouble vx, vy;
+      mf_vx_input->GetInputAverage(&vx);
+      mf_vy_input->GetInputAverage(&vy);
+      vel = sqrt(vx * vx + vy * vy) + 1.e-8;
+      IssmPDouble xi = 1.;
+      IssmDouble tau = xi * h / (2 * vel);
+
+      /*Mass matrix - part 2*/
+      factor = gauss->weight * Jdet * tau;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] +=
+              factor * basis[j] *
+              (vx * dbasis[0 * numnodes + i] + vy * dbasis[1 * numnodes + i]);
+        }
+      }
+
+      /*Advection matrix - part 2, A*/
+      factor = dt * gauss->weight * Jdet * tau;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] +=
+              factor *
+              (vx * dbasis[0 * numnodes + j] + vy * dbasis[1 * numnodes + j]) *
+              (vx * dbasis[0 * numnodes + i] + vy * dbasis[1 * numnodes + i]);
+        }
+      }
+
+      break;
+    }
+    case 6: {
+      /*SUPG*/
+      IssmDouble vx, vy;
+      mf_vx_input->GetInputAverage(&vx);
+      mf_vy_input->GetInputAverage(&vy);
+      vel = sqrt(vx * vx + vy * vy) + 1.e-8;
+      IssmDouble ECN, K;
+      ECN = vel * dt / h;
+      K = 1. / tanh(ECN) - 1. / ECN;
+      //				if (ECN<1e-6) K = ECN /3.0;
+
+      /*According to Hilmar, xi=K is too large*/
+      IssmDouble xi = 0.1 * K;
+
+      IssmDouble tau = xi * h / (2 * vel);
+      Input *levelset_input = NULL;
+
+      IssmDouble kappa;
+      IssmDouble p = 4, q = 4;
+      IssmDouble phi[3];
+
+      levelset_input = basalelement->GetInput(MaskIceLevelsetEnum);
+      _assert_(levelset_input);
+      levelset_input->GetInputValue(&phi[0], gauss);
+
+      IssmDouble dphidx = 0., dphidy = 0.;
+      IssmDouble nphi;
+
+      for (int i = 0; i < numnodes; i++) {
+        dphidx += phi[i] * dbasis[0 * numnodes + i];
+        dphidy += phi[i] * dbasis[1 * numnodes + i];
+      }
+      nphi = sqrt(dphidx * dphidx + dphidy * dphidy);
+
+      if (nphi >= 1) {
+        kappa = 1 - 1.0 / nphi;
+      } else {
+        kappa = 0.5 / M_PI * sin(2 * M_PI * nphi) / nphi;
+      }
+
+      kappa = kappa * vel / h;
+
+      /*Mass matrix - part 2*/
+      factor = gauss->weight * Jdet * tau;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] +=
+              factor * basis[j] *
+              (vx * dbasis[0 * numnodes + i] + vy * dbasis[1 * numnodes + i]);
+        }
+      }
+
+      /*Advection matrix - part 2, A*/
+      factor = dt * gauss->weight * Jdet * tau;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          Ke->values[i * numnodes + j] +=
+              factor *
+              (vx * dbasis[0 * numnodes + j] + vy * dbasis[1 * numnodes + j]) *
+              (vx * dbasis[0 * numnodes + i] + vy * dbasis[1 * numnodes + i]);
+        }
+      }
+      /*Add the pertubation term \nabla\cdot(\kappa*\nabla\phi)*/
+      factor = dt * gauss->weight * Jdet * kappa;
+      for (int i = 0; i < numnodes; i++) {
+        for (int j = 0; j < numnodes; j++) {
+          for (int k = 0; k < dim; k++) {
+            Ke->values[i * numnodes + j] +=
+                factor * dbasis[k * numnodes + j] * dbasis[k * numnodes + i];
+          }
+        }
+      }
+
+      break;
+    }
+    default:
+      _error_("unknown type of stabilization in LevelsetAnalysis.cpp");
+    }
+  }
+
+  /*Clean up and return*/
+  xDelete<IssmDouble>(xyz_list);
+  xDelete<IssmDouble>(basis);
+  xDelete<IssmDouble>(dbasis);
+  delete gauss;
+  if (basalelement->IsSpawnedElement()) {
+    basalelement->DeleteMaterials();
+    delete basalelement;
+  };
+  return Ke;
+} /*}}}*/
+ElementVector *LevelsetAnalysis::CreatePVector(Element *element) { /*{{{*/
+
+  if (!element->IsOnBase())
+    return NULL;
+  Element *basalelement = element->SpawnBasalElement();
+
+  /*Intermediaries */
+  int domaintype, stabilization;
+  IssmDouble Jdet, dt;
+  IssmDouble lsf;
+  IssmDouble *xyz_list = NULL;
+
+  /*Fetch number of nodes and dof for this finite element*/
+  int numnodes = basalelement->GetNumberOfNodes();
+  basalelement->FindParam(&stabilization, LevelsetStabilizationEnum);
+
+  /*Initialize Element vector*/
+  ElementVector *pe = basalelement->NewElementVector();
+  basalelement->FindParam(&dt, TimesteppingTimeStepEnum);
+  _assert_(dt > 0.);
+
+  /*Initialize basis vector*/
+  IssmDouble *basis = xNew<IssmDouble>(numnodes);
+  IssmDouble *dbasis = NULL;
+  if ((stabilization == 5) | (stabilization == 6))
+    dbasis = xNew<IssmDouble>(2 * numnodes);
+
+  /*Retrieve all inputs and parameters*/
+  basalelement->GetVerticesCoordinates(&xyz_list);
+  Input *levelset_input = basalelement->GetInput(MaskIceLevelsetEnum);
+  _assert_(levelset_input);
+  Input *mf_vx_input = basalelement->GetInput(MovingFrontalVxEnum);
+  _assert_(mf_vx_input);
+  Input *mf_vy_input = basalelement->GetInput(MovingFrontalVyEnum);
+  _assert_(mf_vy_input);
+
+  IssmDouble h = basalelement->CharacteristicLength();
+
+  /* Start  looping on the number of gaussian points: */
+  Gauss *gauss = basalelement->NewGauss(2);
+  while (gauss->next()) {
+    basalelement->JacobianDeterminant(&Jdet, xyz_list, gauss);
+    basalelement->NodalFunctions(basis, gauss);
+
+    /* old function value */
+    levelset_input->GetInputValue(&lsf, gauss);
+    IssmDouble factor = Jdet * gauss->weight * lsf;
+    for (int i = 0; i < numnodes; i++)
+      pe->values[i] += factor * basis[i];
+
+    if (stabilization == 5) { /*SUPG*/
+      IssmDouble vx, vy, vel;
+      basalelement->NodalFunctionsDerivatives(dbasis, xyz_list, gauss);
+      mf_vx_input->GetInputAverage(&vx);
+      mf_vy_input->GetInputAverage(&vy);
+      vel = sqrt(vx * vx + vy * vy) + 1.e-8;
+      IssmPDouble xi = 1.;
+      IssmDouble tau = xi * h / (2 * vel);
+
+      /*Force vector - part 2*/
+      factor = Jdet * gauss->weight * lsf;
+      for (int i = 0; i < numnodes; i++) {
+        pe->values[i] += factor * (tau * vx * dbasis[0 * numnodes + i] +
+                                   tau * vy * dbasis[1 * numnodes + i]);
+      }
+    } else if (stabilization == 6) {
+      IssmDouble vx, vy, vel;
+      basalelement->NodalFunctionsDerivatives(dbasis, xyz_list, gauss);
+      mf_vx_input->GetInputAverage(&vx);
+      mf_vy_input->GetInputAverage(&vy);
+      vel = sqrt(vx * vx + vy * vy) + 1.e-8;
+
+      IssmDouble ECN, K;
+      ECN = vel * dt / h;
+      K = 1. / tanh(ECN) - 1. / ECN;
+      //		if (ECN<1e-6) K = ECN /3.0;
+
+      /*According to Hilmar, xi=K is too large*/
+      IssmDouble xi = 0.1 * K;
+
+      IssmDouble tau = xi * h / (2 * vel);
+
+      /*Force vector - part 2*/
+      factor = Jdet * gauss->weight * lsf * tau;
+      for (int i = 0; i < numnodes; i++) {
+        pe->values[i] += factor * (vx * dbasis[0 * numnodes + i] +
+                                   vy * dbasis[1 * numnodes + i]);
+      }
+    }
+  }
+
+  /*Clean up and return*/
+  xDelete<IssmDouble>(xyz_list);
+  xDelete<IssmDouble>(basis);
+  xDelete<IssmDouble>(dbasis);
+  basalelement->FindParam(&domaintype, DomainTypeEnum);
+  if (basalelement->IsSpawnedElement()) {
+    basalelement->DeleteMaterials();
+    delete basalelement;
+  };
+  delete gauss;
+
+  return pe;
+} /*}}}*/
+IssmDouble LevelsetAnalysis::GetDistanceToStraight(IssmDouble *q,
+                                                   IssmDouble *s0,
+                                                   IssmDouble *s1) { /*{{{*/
+  // returns distance d of point q to straight going through points s0, s1
+  // d=|a x b|/|b|
+  // with a=q-s0, b=s1-s0
+
+  /* Intermediaries */
+  const int dim = 2;
+  int i;
+  IssmDouble a[dim], b[dim];
+  IssmDouble norm_b;
+
+  for (i = 0; i < dim; i++) {
+    a[i] = q[i] - s0[i];
+    b[i] = s1[i] - s0[i];
+  }
+
+  norm_b = 0.;
+  for (i = 0; i < dim; i++)
+    norm_b += b[i] * b[i];
+  norm_b = sqrt(norm_b);
+  _assert_(norm_b > 0.);
+
+  return fabs(a[0] * b[1] - a[1] * b[0]) / norm_b;
+} /*}}}*/
+void LevelsetAnalysis::GetSolutionFromInputs(Vector<IssmDouble> *solution,
+                                             Element *element) { /*{{{*/
+  element->GetSolutionFromInputsOneDof(solution, MaskIceLevelsetEnum);
+} /*}}}*/
+void LevelsetAnalysis::GradientJ(Vector<IssmDouble> *gradient, Element *element,
+                                 int control_type, int control_interp,
+                                 int control_index) { /*{{{*/
+  _error_("Not implemented yet");
+} /*}}}*/
+void LevelsetAnalysis::InputUpdateFromSolution(IssmDouble *solution,
+                                               Element *element) { /*{{{*/
+
+  int domaintype;
+  element->FindParam(&domaintype, DomainTypeEnum);
+  switch (domaintype) {
+  case Domain2DhorizontalEnum:
+    element->InputUpdateFromSolutionOneDof(solution, MaskIceLevelsetEnum);
+    break;
+  case Domain3DEnum:
+    element->InputUpdateFromSolutionOneDofCollapsed(solution,
+                                                    MaskIceLevelsetEnum);
+    break;
+  default:
+    _error_("mesh " << EnumToStringx(domaintype) << " not supported yet");
+  }
+} /*}}}*/
+void LevelsetAnalysis::PostProcess(FemModel *femmodel) { /*{{{*/
+
+  /*This function is only used by "discrete calving laws" for which we change
+   * the value of the levelset after the advection step (level set equation
+   * solve) based on the law*/
+
+  /*Intermediaries*/
+  int calvinglaw;
+  IssmDouble newlevelset[6];
+  femmodel->parameters->FindParam(&calvinglaw, CalvingLawEnum);
+
+  /*Apply minimum thickness criterion*/
+  if (calvinglaw == CalvingMinthicknessEnum ||
+      calvinglaw == CalvingVonmisesEnum ||
+      calvinglaw == CalvingParameterizationEnum ||
+      calvinglaw == CalvingVonmisesADEnum ||
+      calvinglaw == CalvingCalvingMIPEnum) {
+
+    IssmDouble mig_max = femmodel->parameters->FindParam(MigrationMaxEnum);
+    IssmDouble dt = femmodel->parameters->FindParam(TimesteppingTimeStepEnum);
+
+    /*Get current distance to terminus*/
+    InputDuplicatex(femmodel, MaskIceLevelsetEnum, DistanceToCalvingfrontEnum);
+    femmodel->DistanceToFieldValue(MaskIceLevelsetEnum, 0,
+                                   DistanceToCalvingfrontEnum);
+
+    /*Intermediaries*/
+    IssmDouble thickness, bed, sealevel, distance, levelset;
+    IssmDouble min_thickness =
+        femmodel->parameters->FindParam(CalvingMinthicknessEnum);
+
+    /*Loop over all elements of this partition*/
+    for (Object *&object : femmodel->elements->objects) {
+      Element *element = xDynamicCast<Element *>(object);
+
+      /*no need to postprocess an ice free element*/
+      if (!element->IsIceInElement())
+        continue;
+
+      int numnodes = element->GetNumberOfNodes();
+      _assert_(numnodes < 7);
+      Gauss *gauss = element->NewGauss();
+      Input *H_input = element->GetInput(ThicknessEnum);
+      _assert_(H_input);
+      Input *b_input = element->GetInput(BedEnum);
+      _assert_(b_input);
+      Input *sl_input = element->GetInput(SealevelEnum);
+      _assert_(sl_input);
+      Input *dis_input = element->GetInput(DistanceToCalvingfrontEnum);
+      _assert_(dis_input);
+      Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);
+      _assert_(levelset_input);
+
+      /*Potentially constrain nodes of this element*/
+      for (int in = 0; in < numnodes; in++) {
+        gauss->GaussNode(element->GetElementType(), in);
+
+        levelset_input->GetInputValue(&levelset, gauss);
+        H_input->GetInputValue(&thickness, gauss);
+        b_input->GetInputValue(&bed, gauss);
+        sl_input->GetInputValue(&sealevel, gauss);
+        dis_input->GetInputValue(&distance, gauss);
+
+        if (thickness < min_thickness && bed < sealevel &&
+            fabs(distance) < mig_max * dt && levelset < 0) {
+          newlevelset[in] =
+              +400.; // Arbitrary > 0 number (i.e. deactivate this node)
+        } else {
+          newlevelset[in] = levelset;
+        }
+      }
+      element->AddInput(MaskIceLevelsetEnum, &newlevelset[0],
+                        element->GetElementType());
+      delete gauss;
+    }
+  }
+} /*}}}*/
+void LevelsetAnalysis::UpdateConstraints(FemModel *femmodel) { /*{{{*/
+
+  /*Intermediaries*/
+  int calvinglaw;
+  IssmDouble yts;
+  femmodel->parameters->FindParam(&yts, ConstantsYtsEnum);
+  femmodel->parameters->FindParam(&calvinglaw, CalvingLawEnum);
+  IssmDouble mig_max = femmodel->parameters->FindParam(MigrationMaxEnum);
+  IssmDouble dt = femmodel->parameters->FindParam(TimesteppingTimeStepEnum);
+
+  /* Get current distance to terminus
+   * Only do this if necessary, PostProcess is already doing it for a few
+   * calving law Do not repeat the process is this function is particularly
+   * slow*/
+  bool computedistance = true;
+  if (calvinglaw == CalvingMinthicknessEnum ||
+      calvinglaw == CalvingVonmisesEnum ||
+      calvinglaw == CalvingParameterizationEnum ||
+      calvinglaw == CalvingVonmisesADEnum ||
+      calvinglaw == CalvingCalvingMIPEnum) {
+    int step;
+    femmodel->parameters->FindParam(&step, StepEnum);
+    if (step > 1) {
+      computedistance = false;
+    }
+  }
+  if (computedistance) {
+    InputDuplicatex(femmodel, MaskIceLevelsetEnum, DistanceToCalvingfrontEnum);
+    femmodel->DistanceToFieldValue(MaskIceLevelsetEnum, 0,
+                                   DistanceToCalvingfrontEnum);
+  }
+
+  if (calvinglaw == CalvingHabEnum) {
+
+    /*Intermediaries*/
+    IssmDouble thickness, water_depth, distance, hab_fraction;
+
+    /*Loop over all elements of this partition*/
+    for (Object *&object : femmodel->elements->objects) {
+      Element *element = xDynamicCast<Element *>(object);
+
+      IssmDouble rho_ice = element->FindParam(MaterialsRhoIceEnum);
+      IssmDouble rho_water = element->FindParam(MaterialsRhoSeawaterEnum);
+
+      int numnodes = element->GetNumberOfNodes();
+      Gauss *gauss = element->NewGauss();
+      Input *H_input = element->GetInput(ThicknessEnum);
+      _assert_(H_input);
+      Input *bed_input = element->GetInput(BedEnum);
+      _assert_(bed_input);
+      Input *hab_fraction_input = element->GetInput(CalvingHabFractionEnum);
+      _assert_(hab_fraction_input);
+      Input *dis_input = element->GetInput(DistanceToCalvingfrontEnum);
+      _assert_(dis_input);
+
+      /*Potentially constrain nodes of this element*/
+      for (int in = 0; in < numnodes; in++) {
+        gauss->GaussNode(element->GetElementType(), in);
+        Node *node = element->GetNode(in);
+        if (!node->IsActive())
+          continue;
+
+        H_input->GetInputValue(&thickness, gauss);
+        bed_input->GetInputValue(&water_depth, gauss);
+        dis_input->GetInputValue(&distance, gauss);
+        hab_fraction_input->GetInputValue(&hab_fraction, gauss);
+
+        if (thickness <
+                ((rho_water / rho_ice) * (1 + hab_fraction) * -water_depth) &&
+            fabs(distance) < mig_max * dt) {
+          node->ApplyConstraint(0, +1.);
+        } else {
+          /* no ice, set no spc */
+          node->DofInFSet(0);
+        }
+      }
+      delete gauss;
+    }
+  } else if (calvinglaw == CalvingCrevasseDepthEnum) {
+    /*Intermediaries*/
+    IssmDouble MAX_ICEBERG_SIZE = 10e3;
+    IssmDouble crevassedepth, crevassedepth_avg;
+    IssmDouble bed, surface_crevasse, thickness, surface, distance;
+    IssmDouble K, avg_K;
+    IssmDouble levelset, ocean_levelset;
+    IssmDouble s_xx, s_yy, rxx, rxx_avg, rxxIT, s_xx_avg, s_yy_avg;
+    IssmDouble max_distance = 0.0;
+    IssmDouble *constraint_nodes = NULL;
+    IssmDouble time, time_step;
+    bool advect_icefront;
+
+    femmodel->parameters->FindParam(&time, TimeEnum);
+    femmodel->parameters->FindParam(&time_step, TimesteppingTimeStepEnum);
+
+    time = time / yts; // Convert from seconds to year
+    time_step = time_step / yts;
+
+    // Get the last time the algorithm checked for calving
+    IssmDouble last_calving_time = 0.0;
+    IssmDouble calving_timescale = 0.0;
+
+    // read the last calving time if it exists
+    if (femmodel->parameters->Exist(LastCalvingTimeEnum)) {
+      femmodel->parameters->FindParam(&last_calving_time, LastCalvingTimeEnum);
+    } else {
+      femmodel->parameters->AddObject(
+          new DoubleParam(LastCalvingTimeEnum, 0.0));
+    }
+
+    // get the calving time scale
+    if (femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum)) {
+      femmodel->parameters->FindParam(&calving_timescale,
+                                      CrevasseDepthCalvingTimescaleEnum);
+    }
+    // cout << "Calving timescale= " << calving_timescale << endl;
+
+    // Check if we should perform calving based on timescale
+    bool perform_calving = false;
+    IssmDouble min_iceberg_size =
+        femmodel->parameters->FindParam(CalvingMinIcebergSizeEnum);
+
+    // Get advect_icefront parameter (default to true if not found for backwards
+    // compatibility)
+    if (femmodel->parameters->Exist(CalvingAdvectIcefrontEnum)) {
+      femmodel->parameters->FindParam(&advect_icefront,
+                                      CalvingAdvectIcefrontEnum);
+      // advect_icefront = (advect_icefront_int != 0);
+    } else {
+      advect_icefront = true; // default to true
+    }
+
+    /* Prevent ice front advection if advect_icefront is false by constraining
+     * all ice front nodes */
+    if (!advect_icefront) {
+      for (Object *&object : femmodel->elements->objects) {
+        Element *element = xDynamicCast<Element *>(object);
+        if (!element->IsIcefront())
+          continue;
+
+        int numnodes = element->GetNumberOfNodes();
+        Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);
+        _assert_(levelset_input);
+        Gauss *gauss = element->NewGauss();
+
+        for (int in = 0; in < numnodes; in++) {
+          gauss->GaussNode(element->GetElementType(), in);
+          Node *node = element->GetNode(in);
+          if (!node->IsActive())
+            continue;
+
+          // Get current levelset value at this node
+          IssmDouble current_levelset;
+          levelset_input->GetInputValue(&current_levelset, gauss);
+
+          // Constrain ice front node to its current levelset value (prevents
+          // advection)
+          node->ApplyConstraint(0, current_levelset);
+        }
+        delete gauss;
+      }
+    }
+
+    _printf0_("   Crevasse Depth Calving"
+              << " (timescale=" << calving_timescale << "yrs, "
+              << "min. iceberg size=" << min_iceberg_size / 1000 << "km)"
+              << ":\n");
+    _printf0_("\tlast check time=" << last_calving_time << " yr\n");
+    _printf0_("\tcurrent time=" << time << " yr\n");
+    _printf0_("\ttime step=" << time_step << " yr\n");
+    if (calving_timescale <= 0.0)
+      // If timescale is 0 or negative, perform calving every timestep (original
+      // behavior)
+      perform_calving = true;
+    else if (time - last_calving_time >= calving_timescale)
+      // If the calving timescale has elapsed, perform calving
+      perform_calving = true;
+    int step;
+    femmodel->parameters->FindParam(&step, StepEnum);
+    // No calving on the first iteration (in the case that we are restarting the
+    // transient from another one)
+    if (step == 1) {
+      femmodel->parameters->SetParam(time - time_step, LastCalvingTimeEnum);
+      return;
+    }
+
+    // Skip calving if the time isn't right yet
+    // Only clear constraints and return early if advect_icefront is enabled
+    if (!perform_calving) {
+      /* Clear dynamic calving constraints from previous events, but preserve
+       static SPCs Static SPCs are identified by having a non-NaN value in
+       spclevelset input */
+      if (advect_icefront) {
+        for (Object *&object : femmodel->elements->objects) {
+          Element *element = xDynamicCast<Element *>(object);
+          int numnodes = element->GetNumberOfNodes();
+
+          // Check if this element has static SPC data
+          Input *spc_input = element->GetInput(SpcLevelsetEnum);
+
+          for (int in = 0; in < numnodes; in++) {
+            Node *node = element->GetNode(in);
+            if (!node->IsActive())
+              continue;
+
+            // Only clear constraint if this node doesn't have a static SPC
+            if (spc_input) {
+              Gauss *gauss = element->NewGauss();
+              gauss->GaussNode(element->GetElementType(), in);
+              IssmDouble spc_value;
+              spc_input->GetInputValue(&spc_value, gauss);
+              delete gauss;
+
+              // If spc_value is NaN, this node has no static SPC, so clear the
+              // constraint
+              if (xIsNan<IssmDouble>(spc_value)) {
+                node->DofInFSet(0);
+              }
+              // Otherwise, keep the static SPC constraint
+            } else {
+              // No SPC input exists, safe to clear all constraints
+              node->DofInFSet(0);
+            }
+          }
+        }
+      }
+      /* comment this line out if we want the algorithm to output min_x
+         and aflipped at each time step */
+      return;
+    }
+
+    // Check for calving (doesn't necessarily happen) at regular intervals
+    femmodel->parameters->SetParam(time, LastCalvingTimeEnum);
+
+    /*Get the DistanceToCalvingfront*/
+    InputDuplicatex(femmodel, MaskIceLevelsetEnum, DistanceToCalvingfrontEnum);
+    femmodel->DistanceToFieldValue(MaskIceLevelsetEnum, 0,
+                                   DistanceToCalvingfrontEnum);
+
+    /*Vector of size number of nodes*/
+    int numvertices = femmodel->vertices->NumberOfVertices();
+    int localvertices = femmodel->vertices->NumberOfVerticesLocal();
+    int numnodes = femmodel->nodes->NumberOfNodes();
+    int localmasters = femmodel->nodes->NumberOfNodesLocal();
+    int localsize = femmodel->nodes->NumberOfNodesLocalAll();
+    Vector<IssmDouble> *vec_constraint_nodes = vec_constraint_nodes =
+        new Vector<IssmDouble>(localmasters, numnodes);
+
+    IssmDouble crevasse_threshold =
+        femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
+
+    /* ===== AVERAGE DEVIATORIC STRESSES OVER THE MESH TO REFELCT THE FINAL OUTPUT ===== */
+    IssmDouble *averaged_s_xx = NULL;
+    IssmDouble *averaged_s_yy = NULL;
+
+    /* Create parallel vectors. These vectors should be accessed with node->Pid() */
+    Vector<IssmDouble> *vec_s_xx = vec_s_xx = new Vector<IssmDouble>(localmasters, numnodes);
+    Vector<IssmDouble> *vec_s_yy = vec_s_yy = new Vector<IssmDouble>(localmasters, numnodes);
+    Vector<IssmDouble> *vec_count = vec_count = new Vector<IssmDouble>(localmasters, numnodes);
+
+    /* Mimic the behavior of ResultToVector() for stress components */
+    for (Object *&object : femmodel->elements->objects) {
+		Element *element = xDynamicCast<Element *>(object);
+		Input *s_xx_input = element->GetInput(DeviatoricStressxxEnum); _assert_(s_xx_input);
+        Input *s_xy_input = element->GetInput(DeviatoricStressxyEnum); _assert_(s_xy_input);
+        Input *s_yy_input = element->GetInput(DeviatoricStressyyEnum); _assert_(s_yy_input);
+		int elt_num_nodes = element->GetNumberOfNodes();
+      	Gauss *gauss = element->NewGauss();
+
+		if (!element->IsIceInElement()) continue;
+
+		for(int i=0; i<elt_num_nodes; i++) {
+			gauss->GaussVertex(i);
+        	Node *node = element->GetNode(i);
+
+          	if (!node->IsActive()) continue;
+
+			// Only process floating nodes
+			s_xx_input->GetInputValue(&s_xx, gauss);
+			s_yy_input->GetInputValue(&s_yy, gauss);
+
+			// add stresses to the vectors 
+			vec_s_xx->SetValue(node->Pid(), s_xx, ADD_VAL);
+			vec_s_yy->SetValue(node->Pid(), s_yy, ADD_VAL);
+			vec_count->SetValue(node->Pid(), 1.0, ADD_VAL);
+		}
+
+    }
+
+    vec_s_xx->Assemble(); vec_s_yy->Assemble(); vec_count->Assemble();
+
+    /* Get local vectors, these local vectors should be indexed with node->Lid() */
+    IssmDouble *local_count = NULL;
+    femmodel->GetLocalVectorWithClonesNodes(&averaged_s_xx, vec_s_xx);
+    femmodel->GetLocalVectorWithClonesNodes(&averaged_s_yy, vec_s_yy);
+    femmodel->GetLocalVectorWithClonesNodes(&local_count, vec_count);
+
+    // Divide by count to get average
+    for (int i = 0; i < localsize; i++) {
+      if (local_count[i] > 0.0) {
+        averaged_s_xx[i] /= local_count[i];
+        averaged_s_yy[i] /= local_count[i];
+      }
+    }
+
+    // Clean up
+    delete vec_s_xx; delete vec_s_yy; delete vec_count;
+    xDelete<IssmDouble>(local_count);
+
+
+    /* Find all elements that are on the ice front. (may not be needed in the future) */
+    IssmDouble local_ice_front_area = 0;
+    IssmDouble local_ice_front_x = 2e11;
+    IssmDouble ice_front_area = 0;
+    IssmDouble ice_front_x = 1e10;
+    for (Object *&object : femmodel->elements->objects) {
+      Element *element = xDynamicCast<Element *>(object);
+      int numnodes = element->GetNumberOfNodes();
+      Gauss *gauss = element->NewGauss();
+
+      Input *thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
+      Input *surface_input = element->GetInput(SurfaceEnum); _assert_(surface_input);
+      Input *buttressing_k_input = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
+      Input *ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input);
+
+      if (element->IsIcefront()) {
+        for (int in = 0; in < numnodes; in++) {
+          gauss->GaussVertex(in);
+          Node *node = element->GetNode(in);
+
+          if (!node->IsActive()) continue;
+
+          // Only process floating nodes
+          ocean_input->GetInputValue(&ocean_levelset, gauss);
+          if (ocean_levelset >= 0.) continue;
+
+          // mark the node as one to be potentially calved
+          vec_constraint_nodes->SetValue(node->Pid(), 1.0, INS_VAL);
+        }
+        delete gauss;
+
+        /* Include element in ice front area calculation regardless of its
+         * stress value */
+        IssmDouble x1 = element->vertices[0]->x;
+        IssmDouble y1 = element->vertices[0]->y;
+        IssmDouble x2 = element->vertices[1]->x;
+        IssmDouble y2 = element->vertices[1]->y;
+        IssmDouble x3 = element->vertices[2]->x;
+        IssmDouble y3 = element->vertices[2]->y;
 		
+        local_ice_front_area +=
+            0.5 * fabs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)));
+        local_ice_front_x = fmin(fmin(x1, x2), x3);
+      }
+    }
+    // _printf0_("\tlocal_ice_front_x=" << local_ice_front_x/1000 <<"km\n");
 
-		// Check if we should perform calving based on timescale
-        bool perform_calving = false;
-		IssmDouble min_iceberg_size = femmodel->parameters->FindParam(CalvingMinIcebergSizeEnum);
+    ISSM_MPI_Allreduce(&local_ice_front_area, &ice_front_area, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+    ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
+    vec_constraint_nodes->Assemble();
+    femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes, vec_constraint_nodes);
 
-		// Get advect_icefront parameter (default to true if not found for backwards compatibility)
-		if(femmodel->parameters->Exist(CalvingAdvectIcefrontEnum)){
-			femmodel->parameters->FindParam(&advect_icefront, CalvingAdvectIcefrontEnum);
-			// advect_icefront = (advect_icefront_int != 0);
-		} else {
-			advect_icefront = true; // default to true
-		}
+    /* Look for all nodes that are above the HFB calving threshold */
+    int nflipped = 1;
+    IssmDouble ls[3];
 
-		/* Prevent ice front advection if advect_icefront is false by constraining all ice front nodes */
-		if (!advect_icefront) {
-			for(Object* & object : femmodel->elements->objects){
-				Element* element = xDynamicCast<Element*>(object);
-				if(!element->IsIcefront()) continue;
+	IssmDouble local_min_x, local_weighted_sum_x, local_sum_ratio, local_aflipped;
+	IssmDouble stress_ratio, stress_ratio_avg;
+	IssmDouble num_nodes, rho_ice, rho_seawater, constant_g;
+    IssmDouble global_min_x = 2e11;
+    IssmDouble weighted_average_x = -1.e+20;
 
-				int numnodes = element->GetNumberOfNodes();
-				Input* levelset_input = element->GetInput(MaskIceLevelsetEnum); _assert_(levelset_input);
-				Gauss* gauss = element->NewGauss();
+    while (nflipped) {
+      int local_nflipped = 0;
+      local_aflipped = 0.0; // Area of all elements flipped
+      local_min_x = global_min_x;
+      local_weighted_sum_x = 0.0;
+      local_sum_ratio = 0.0;
 
-				for(int in=0;in<numnodes;in++){
-					gauss->GaussNode(element->GetElementType(),in);
-					Node* node = element->GetNode(in);
-					if(!node->IsActive()) continue;
-
-					// Get current levelset value at this node
-					IssmDouble current_levelset;
-					levelset_input->GetInputValue(&current_levelset, gauss);
-
-					// Constrain ice front node to its current levelset value (prevents advection)
-					node->ApplyConstraint(0, current_levelset);
-				}
-				delete gauss;
-			}
-		}
-
-		_printf0_("   Crevasse Depth Calving" << " (timescale=" << calving_timescale 
-			<< "yrs, " << "min. iceberg size=" << min_iceberg_size/1000 << "km)" << ":\n");  
-		_printf0_("\tlast check time=" << last_calving_time << " yr\n");
-		_printf0_("\tcurrent time=" << time << " yr\n");
-		_printf0_("\ttime step=" <<time_step<<" yr\n");
-        if(calving_timescale <= 0.0)
-            // If timescale is 0 or negative, perform calving every timestep (original behavior)  
-            perform_calving = true;
-        else if(time - last_calving_time >= calving_timescale)
-			// If the calving timescale has elapsed, perform calving  
-            perform_calving = true;  
-		int step; femmodel->parameters->FindParam(&step,StepEnum);
-		// No calving on the first iteration (in the case that we are restarting the transient from another one)
-		if(step==1){
-			femmodel->parameters->SetParam(time-time_step, LastCalvingTimeEnum);
-			return;
-		}
-
-		// Skip calving if the time isn't right yet
-		// Only clear constraints and return early if advect_icefront is enabled
-		if (!perform_calving) {
-			/* Clear dynamic calving constraints from previous events, but preserve static SPCs
-			 Static SPCs are identified by having a non-NaN value in spclevelset input */
-			if (advect_icefront) {
-				for(Object* & object : femmodel->elements->objects){
-					Element* element  = xDynamicCast<Element*>(object);
-					int      numnodes = element->GetNumberOfNodes();
-
-					// Check if this element has static SPC data
-					Input* spc_input = element->GetInput(SpcLevelsetEnum);
-
-					for(int in=0;in<numnodes;in++){
-						Node* node=element->GetNode(in);
-						if(!node->IsActive()) continue;
-
-						// Only clear constraint if this node doesn't have a static SPC
-						if(spc_input){
-							Gauss* gauss = element->NewGauss();
-							gauss->GaussNode(element->GetElementType(),in);
-							IssmDouble spc_value;
-							spc_input->GetInputValue(&spc_value, gauss);
-							delete gauss;
-
-							// If spc_value is NaN, this node has no static SPC, so clear the constraint
-							if(xIsNan<IssmDouble>(spc_value)){
-								node->DofInFSet(0);
-							}
-							// Otherwise, keep the static SPC constraint
-						}
-						else{
-							// No SPC input exists, safe to clear all constraints
-							node->DofInFSet(0);
-						}
-					}
-				}
-			}
-			/* comment this line out if we want the algorithm to output min_x
-			   and aflipped at each time step */
-			return;
-		}
+      for (Object *&object : femmodel->elements->objects) {
+        Element *element = xDynamicCast<Element *>(object);
 		
-		// Check for calving (doesn't necessarily happen) at regular intervals
-		femmodel->parameters->SetParam(time, LastCalvingTimeEnum);
+        if (!element->IsIceInElement()) continue;
 
-		/*Get the DistanceToCalvingfront*/
-		InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
-		femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0,DistanceToCalvingfrontEnum);
+        numnodes = element->GetNumberOfNodes();
 
-		/*Vector of size number of nodes*/
-		int numnodes      = femmodel->nodes->NumberOfNodes();
-		int localmasters  = femmodel->nodes->NumberOfNodesLocal();
-      	Vector<IssmDouble>* vec_constraint_nodes = vec_constraint_nodes=new Vector<IssmDouble>(localmasters,numnodes);
+		Input *ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input);
+        Input *levelset_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
+        Input *thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
+        Input *s_xx_input = element->GetInput(DeviatoricStressxxEnum); _assert_(s_xx_input);
+        Input *s_yy_input = element->GetInput(DeviatoricStressyyEnum); _assert_(s_yy_input);
 
-		IssmDouble crevasse_threshold = femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
+        rho_ice = element->FindParam(MaterialsRhoIceEnum);
+        rho_seawater = element->FindParam(MaterialsRhoSeawaterEnum);
+        constant_g = element->FindParam(ConstantsGEnum);
 
-		/* ===== BEGIN P1DG AVERAGING BLOCK (REVERT POINT) =====
-		 * Compute element-averaged P1DG values to match ISSM output behavior.
-		 * For stress components: Uses ISSM's standard ResultToVector() method.
-		 * For other fields: Manually replicates the averaging logic.
-		 * To revert: remove this entire block and restore element-local access below. */
-		IssmDouble* averaged_s_xx = NULL;
-		IssmDouble* averaged_s_yy = NULL;
+        /* Skip elements on the ice front */
+        element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+        int nrice = 0;
+        for (int i = 0; i < 3; i++) {
+          if (ls[i] < 0.) nrice++;
+        }
+        if (nrice < 3) continue;
 
-		// Create vectors to store averaged values at nodes
-		Vector<IssmDouble>* vec_s_xx = new Vector<IssmDouble>(localmasters, numnodes);  // Must use same constructor for MPI
-		Vector<IssmDouble>* vec_s_yy = new Vector<IssmDouble>(localmasters, numnodes);  // Must use same constructor for MPI
+        /* Is this element connected to a node that should be calved? */
+        bool isconnected = true; // Ignore the connectivity criterion for now 
 
-		// Explicitly zero the stress vectors to ensure clean state for ADD_VAL operations
-		vec_s_xx->Set(0.0);
-		vec_s_yy->Set(0.0);
+        /* Check stress if connected */
+        Gauss *gauss = element->NewGauss();
+        bool is_critical = false;
+        for (int in = 0; in < numnodes; in++) {
+			gauss->GaussVertex(in);
+			Node *node = element->GetNode(in);
+			if (!node->IsActive()) continue;
+			if (ls[in] > 0) continue;
 
-		// Use the ResultToVector function to perform P1 averaging
-		for(Object* & object : femmodel->elements->objects){
-			Element* element = xDynamicCast<Element*>(object);
-			if (element->IsIcefront() || !element->IsIceInElement()) continue; 
-			element->ResultToVector(vec_s_xx, DeviatoricStressxxEnum);
-			element->ResultToVector(vec_s_yy, DeviatoricStressyyEnum);
-		}
+			ocean_input->GetInputValue(&ocean_levelset, gauss);
+			if (ocean_levelset >= 0.) continue;
 
-		// Assemble across MPI ranks
-		vec_s_xx->Assemble();
-		vec_s_yy->Assemble();
-		femmodel->GetLocalVectorWithClonesNodes(&averaged_s_xx, vec_s_xx);
-		femmodel->GetLocalVectorWithClonesNodes(&averaged_s_yy, vec_s_yy);
-		delete vec_s_xx;
-		delete vec_s_yy;
-		/* ===== END P1DG AVERAGING BLOCK ===== */
+			thickness_input->GetInputValue(&thickness, gauss);
+			levelset_input->GetInputValue(&distance, gauss); // note this distance is SIGNED!
+			s_xx_input->GetInputValue(&s_xx, gauss);
+			s_yy_input->GetInputValue(&s_yy, gauss);
+			s_xx_avg = averaged_s_xx[node->Lid()];
+			s_yy_avg = averaged_s_yy[node->Lid()];
 
-		IssmDouble local_ice_front_area=0;
-		IssmDouble local_ice_front_x=2e11;
-		IssmDouble ice_front_area=0; 
-		IssmDouble ice_front_x=1e10;
-		/* Find all elements that are on the ice front. Note that the element->IsIceFront function 
-			   only returns elements that has exactly one node without ice */
-		for(Object* & object : femmodel->elements->objects){
-			Element* element   = xDynamicCast<Element*>(object);
-			int      numnodes  = element->GetNumberOfNodes();
-			Gauss*   gauss     = element->NewGauss();
+			rxx     = 2*s_xx+s_yy;
+			rxx_avg = 2 * s_xx_avg + s_yy_avg;
+			rxxIT   = rho_ice * constant_g * thickness * (1 - rho_ice / rho_seawater) / 2;
 
-			Input*   crevassedepth_input    = element->GetInput(CrevasseDepthEnum); _assert_(crevassedepth_input);
-			Input*   bed_input              = element->GetInput(BedEnum); _assert_(bed_input);
-			Input*   surface_crevasse_input = element->GetInput(SurfaceCrevasseEnum); _assert_(surface_crevasse_input);
-			Input*   thickness_input        = element->GetInput(ThicknessEnum); _assert_(thickness_input);
-			Input*   surface_input          = element->GetInput(SurfaceEnum); _assert_(surface_input);
-			Input*   buttressing_k_input    = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
-			Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
-			Input* boundary_input 		    = element->GetInput(MeshVertexonboundaryEnum);  
+			/* 11/21/2025 ceil the ratio at 1.5 for interpretatbility */
+			stress_ratio     = fmin(rxx / rxxIT, 1.5); 
+			stress_ratio_avg = fmin(rxx_avg / rxxIT, 1.5);
 
-			if(element->IsIcefront()){
-				for(int in=0;in<numnodes;in++){
-					// gauss->GaussNode(element->GetElementType(),in);
-					gauss->GaussVertex(in);
-					Node* node=element->GetNode(in);
-					
-					if(!node->IsActive()) continue;
-					
-					// Only process floating nodes 
-					ocean_input->GetInputValue(&ocean_levelset, gauss);
-					crevassedepth_input->GetInputValue(&crevassedepth,gauss);
-					thickness_input->GetInputValue(&thickness,gauss);
-					if (ocean_levelset>=0.) continue;
-					
-					// mark the node as one to be potentially calved 
-					vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
+			/* mark the node for calving if it is beyond critical calving stress */
+			if (stress_ratio_avg >= crevasse_threshold && constraint_nodes[node->Lid()] == 0.) { // && fabs(distance) <= MAX_ICEBERG_SIZE) {
+				local_nflipped++;
+				local_weighted_sum_x += element->vertices[in]->x * stress_ratio_avg;
+				local_sum_ratio += stress_ratio_avg;
+				vec_constraint_nodes->SetValue(node->Pid(), 1.0, INS_VAL);
+				if (element->vertices[in]->x < local_min_x) {
+					local_min_x = element->vertices[in]->x;
+					/* PRINT STATEMENTS FOR DEBUGGING */
+					//   cout << "\t--------------- found super critical element -------------------\n";
+					//   cout << "\t\tElement ID: " << element->id << ", Vertex index: " << in << "\n";
+					//   cout << "\t\ticelevelset = " << distance / 1000 << "km\n";
+					//   cout << "\t\tx = " << element->vertices[in]->x / 1000 << "km, y = " << element->vertices[in]->y / 1000 << "km.\n";
+					//   cout << "\t\tH = " << thickness << "m.\n";
+					//   cout << "\t\tsxx       = " << s_xx / 1000 << ", syy       = " << s_yy / 1000 << "\n";
+					//   cout << "\t\tsxx (avg) = " << s_xx_avg / 1000 << ", syy (avg) = " << s_yy_avg / 1000 << "\n";
+					//   cout << "\t\trxx/rxxIT       = " << (2 * s_xx + s_yy) / rxxIT << "\n";
+					//   cout << "\t\trxx/rxxIT (avg) =" << (2 * s_xx_avg + s_yy_avg) / rxxIT <<"\n";
+					//   cout << "\t\tcd=" << crevassedepth << ".\n";
 				}
-				delete gauss;
-				
-				/* Include element in ice front area calculation regardless of its stress value */
-				IssmDouble x1 = element->vertices[0]->x;
-				IssmDouble y1 = element->vertices[0]->y;
-				IssmDouble x2 = element->vertices[1]->x;
-				IssmDouble y2 = element->vertices[1]->y;
-				IssmDouble x3 = element->vertices[2]->x;
-				IssmDouble y3 = element->vertices[2]->y;
-				// _printf0_("\tElement at ice front: x1=" << x1/1000 << "km, x2=" << x2/1000 << "km, x3=" << x3/1000 << "km.\n");
-				local_ice_front_area += 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
-				local_ice_front_x=fmin(fmin(x1,x2),x3);
 			}
-		}
-		// _printf0_("\tlocal_ice_front_x=" << local_ice_front_x/1000 <<"km\n");
+        }
+        delete gauss;
+      }
+      ISSM_MPI_Allreduce(&local_nflipped, &nflipped, 1, ISSM_MPI_INT, ISSM_MPI_SUM, IssmComm::GetComm());
+      ISSM_MPI_Allreduce(&local_min_x, &global_min_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
 
-		ISSM_MPI_Allreduce(&local_ice_front_area,&ice_front_area,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
-		ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-		/*Assemble vector and serialize: */ 
-		vec_constraint_nodes->Assemble(); // for parallelization 
-		femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes); 
+      IssmDouble global_weighted_sum_x = 0.0;
+      IssmDouble global_sum_ratio = 0.0;
+      ISSM_MPI_Allreduce(&local_weighted_sum_x, &global_weighted_sum_x, 1,
+                         ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+      ISSM_MPI_Allreduce(&local_sum_ratio, &global_sum_ratio, 1,
+                         ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
 
-		/* Look for all nodes that are connected to calving front nodes */
-		int nflipped=1; 
-		IssmDouble ls[3]; 
-		
-		IssmDouble global_min_x=2e11;
+      if (global_sum_ratio > 0.0) weighted_average_x = global_weighted_sum_x / global_sum_ratio;
 
-		while(nflipped){
-			IssmDouble local_aflipped=0.0; // Area of all elements flipped
-			int local_nflipped=0;
-			IssmDouble local_min_x = global_min_x;  
+      /* update the local constrain_nodes vector */
+      vec_constraint_nodes->Assemble(); xDelete<IssmDouble>(constraint_nodes);
+      femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes, vec_constraint_nodes);
+    }
+    delete vec_constraint_nodes;
 
-			for(Object* & object : femmodel->elements->objects){
-				Element* element  = xDynamicCast<Element*>(object);
-				// Ignore elements without ice
-				if (!element->IsIceInElement()) continue;
+    femmodel->parameters->SetParam(global_min_x, CalvingPropagatedMinXEnum);
+    _printf0_("\tice front          = " << ice_front_x / 1000 << "km.\n");
+	_printf0_("\tweighted average x = " << weighted_average_x / 1000 << "km, calve="<< ((ice_front_x-weighted_average_x)>=min_iceberg_size) << "\n");
+    _printf0_("\tcritical x-coord   = " << global_min_x / 1000 << "km, calve="<< ((ice_front_x-global_min_x)>=min_iceberg_size) << "\n");
 
-				int      numnodes = element->GetNumberOfNodes();
+    /* Apply the calving calculation to the ice levelset, if applicable */
+    if (fabs(ice_front_x - weighted_average_x) >= min_iceberg_size &&
+        ice_front_x > weighted_average_x &&
+		weighted_average_x>0 && 
+        perform_calving) { // minimum iceberg size threshold
+                           // (parameter-controlled)
+      for (Object *&object : femmodel->elements->objects) {
+        Element *element = xDynamicCast<Element *>(object);
+        int numnodes = element->GetNumberOfNodes();
+        Gauss *gauss = element->NewGauss();
+        // Check if this element has static SPC data
+        Input *spc_input = element->GetInput(SpcLevelsetEnum);
 
-				Input *levelset_input         = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
-				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
-				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
-				Input *surface_input          = element->GetInput(SurfaceEnum);                _assert_(surface_input);
-				Input*   dis_input              = element->GetInput(DistanceToCalvingfrontEnum); _assert_(dis_input);
-				Input*   buttressing_k_input           = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
-				Input* ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input); 
-				Input*   s_xx_input              = element->GetInput(DeviatoricStressxxEnum);     _assert_(s_xx_input);
-				Input*   s_xy_input              = element->GetInput(DeviatoricStressxyEnum);     _assert_(s_xy_input);
-				Input*   s_yy_input              = element->GetInput(DeviatoricStressyyEnum);     _assert_(s_yy_input);
+        /*Potentially constrain nodes of this element*/
+        for (int in = 0; in < numnodes; in++) {
+          // gauss->GaussNode(element->GetElementType(),in);
+          gauss->GaussVertex(in);
+          Node *node = element->GetNode(in);
+          if (!node->IsActive())
+            continue;
 
-				IssmDouble rho_ice        = element->FindParam(MaterialsRhoIceEnum);
-				IssmDouble rho_seawater   = element->FindParam(MaterialsRhoSeawaterEnum);
-				IssmDouble rho_freshwater = element->FindParam(MaterialsRhoFreshwaterEnum);
-				IssmDouble constant_g     = element->FindParam(ConstantsGEnum);
+          // Check if this node has a static SPC that should be preserved
+          bool has_static_spc = false;
+          if (spc_input) {
+            IssmDouble spc_value;
+            spc_input->GetInputValue(&spc_value, gauss);
+            if (!xIsNan<IssmDouble>(spc_value)) {
+              has_static_spc = true;
+            }
+          }
 
-				/* Skip elements on the ice front */
-				element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
-				int nrice = 0;
-				for(int i = 0; i < 3; i++) {
-					if(ls[i] < 0.) nrice++;
-				}
-				if (nrice < 3) continue; 
-				
-				/* Is this element connected to a node that should be calved? */
-				bool isconnected = true;
-				// for(int in=0;in<numnodes;in++){
-				// 	Node* node=element->GetNode(in);
-				// 	if(constraint_nodes[node->Lid()]>0.){
-				// 		isconnected = true;
-				// 		break;
-				// 	}
-				// }
-				// if (!isconnected) continue; 
-				
-				// IssmDouble ls[3];
-				// element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+          // Only apply/clear dynamic calving constraints if no static SPC exists
+          if (!has_static_spc) {
+            int vertex_index = in;
+            if (element->vertices[vertex_index]->x >= weighted_average_x) {
+              node->ApplyConstraint(0, +1.);
+            } else {
+              /* no ice, set no spc */
+              node->DofInFSet(0);
+            }
+          }
+          // If static SPC exists, leave it unchanged
+        }
+        delete gauss;
+      }
+      // Set flag to trigger AMR (in progress)
+      femmodel->parameters->SetParam(1.0, CalvingOccurredEnum);
+      _printf0_("\tExecuted calving.\n");
+    } else {
+      // Reset flag - no calving this timestep
+      femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
+      _printf0_("\tDid not execute calving.\n");
+    }
 
-				/* Check stress if connected */
-				Gauss* gauss = element->NewGauss();
-				bool is_critical=false;
-				for(int in=0;in<numnodes;in++){
-					// gauss->GaussNode(element->GetElementType(),in);
-					gauss->GaussVertex(in);
-					Node* node=element->GetNode(in);
-					if (!node->IsActive()) continue;
-					if (ls[in]>0) continue;
-					ocean_input->GetInputValue(&ocean_levelset, gauss);
-					if (ocean_levelset>=0.) continue;
+    xDelete<IssmDouble>(averaged_s_xx);
+    xDelete<IssmDouble>(averaged_s_yy);
+    xDelete<IssmDouble>(constraint_nodes);
+  }
 
-					// crevassedepth_input->GetInputValue(&crevassedepth, gauss);
-					thickness_input->GetInputValue(&thickness,gauss);
-					dis_input->GetInputValue(&distance, gauss); // note this distance is SIGNED!
-					s_xx_avg = averaged_s_xx[node->Sid()];
-					s_yy_avg = averaged_s_yy[node->Sid()];
-
-					rxx=2*s_xx_avg + s_yy_avg; 
-					rxxIT=rho_ice*constant_g*thickness*(1-rho_ice/rho_seawater)/2;
-
-					/* mark the node for calving if it is beyond critical calving stress */ 
-					/* 11/14/2025: Floating point arithmetic leads to trouble far into the ice sheet / shelf ... must be careful 
-					               to avoid them*/
-					if(rxx/rxxIT>=1 && constraint_nodes[node->Lid()]==0. && fabs(distance)<=MAX_ICEBERG_SIZE){
-						// is_critical=true;
-						local_nflipped++; 
-						vec_constraint_nodes->SetValue(node->Pid(),1.0,INS_VAL);
-						if (element->vertices[in]->x < local_min_x) {
-							local_min_x = element->vertices[in]->x;
-							cout << "\t--------------- Updating Min. Critical x---------------------\n";
-							cout << "\t\tElement ID: " << element->id << ", Vertex index: " << in << "\n";
-							cout << "\t\tDistance from ice front = " << distance/1000 << "\n";
-							cout << "\t\tx=" << element->vertices[in]->x/1000 << "km, y="<<element->vertices[in]->y/1000 << "km.\n";
-							cout << "\t\tH="<<thickness << "m.\n";
-							cout << "\t\tsxx     = " << s_xx/1000 << ", syy     = " << s_yy/1000 << "\n";
-							cout << "\t\tsxx (avg) = " << s_xx_avg/1000 << ", syy (avg)= " << s_yy_avg/1000 << "\n";
-							cout << "\t\t1-rxx/rxxIT=" << 1-rxx/rxxIT << ", (avg)=" << 1-(2*s_xx_avg+s_yy_avg)/rxxIT << "\n";
-							cout << "\t\tK="<<K<<", (avg)"<<avg_K<<"\n";
-							cout << "\t\tcd=" << crevassedepth << ".\n";
-						}
-					} 
-				}
-				delete gauss;
-			}
-			// cout << "\t\tlocal_min_x="<<local_min_x/1000<<"\n";
-			/*Count how many new nodes were found*/
-			// propagate local variable to gloabl cpu
-			// the code doesn't continue to next line until all the Allreduce calls have finished executing
-			ISSM_MPI_Allreduce(&local_nflipped,&nflipped,1,ISSM_MPI_INT,ISSM_MPI_SUM,IssmComm::GetComm());
-			// ISSM_MPI_Allreduce(&local_aflipped,&aflipped,1,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm()); 
-			ISSM_MPI_Allreduce(&local_min_x, &global_min_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-			
-			// total_aflipped += aflipped;
-			
-			/*Assemble and serialize flag vector*/
-			vec_constraint_nodes->Assemble();
-			xDelete<IssmDouble>(constraint_nodes);
-			femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes,vec_constraint_nodes);
-		}
-		/*Free resources:*/
-		delete vec_constraint_nodes;
-		
-		/* Removed as af 11/15/2025: tracking the area of ice to be calved */
-		// IssmDouble local_aflipped=0.0;
-		// for (Object* & object : femmodel->elements->objects) {
-		// 	/* Calculate area of element above critical stress */
-		// 	Element* element  = xDynamicCast<Element*>(object);
-		// 	int      numnodes = element->GetNumberOfNodes();
-
-		// 	/* Ignore elements without ice */
-		// 	if (!element->IsIceInElement()) continue;
-
-		// 	/* Skip elements on the ice front */
-		// 	if (element->IsIcefront()) continue;
-
-		// 	Gauss* gauss = element->NewGauss();
-		// 	IssmDouble n_crit = 0.;
-		// 	for(int in=0;in<numnodes;in++){
-		// 		// gauss->GaussNode(element->GetElementType(),in);
-		// 		gauss->GaussVertex(in);
-		// 		Node* node=element->GetNode(in);
-		// 		if (!node->IsActive()) continue;
-				
-		// 		crevassedepth = averaged_crevassedepth[node->Sid()];
-		// 		/* mark the interior node for calving if it is beyond critical calving stress */
-		// 		if(constraint_nodes[node->Lid()]==1. && crevassedepth>=crevasse_threshold) n_crit = n_crit + 1.0;
-		// 	}
-
-		// 	/* Calculate a "weighted" area of elements to be calved */
-		// 	if (n_crit > 1.0) {
-		// 		IssmDouble x1 = element->vertices[0]->x;
-		// 		IssmDouble y1 = element->vertices[0]->y;
-		// 		IssmDouble x2 = element->vertices[1]->x;
-		// 		IssmDouble y2 = element->vertices[1]->y;
-		// 		IssmDouble x3 = element->vertices[2]->x;
-		// 		IssmDouble y3 = element->vertices[2]->y;
-		// 		local_aflipped += (n_crit/3.0) * 0.5 * fabs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)));
-		// 	}
-		// }
-
-		// /* Reduce local area to global across all MPI ranks */
-		// IssmDouble aflipped = 0.0;
-		// ISSM_MPI_Allreduce(&local_aflipped, &aflipped, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
-
-		/* Store the propagated calving area as a parameter for output */
-		// femmodel->parameters->SetParam(aflipped, CalvingPropagatedAreaEnum);
-		/* Store the minimum x-coordinate of critical nodes as a parameter for output */
-		femmodel->parameters->SetParam(global_min_x, CalvingPropagatedMinXEnum);
-		// _printf0_("\tIce Front x-coord=" << ice_front_x/1000 << "km.\n");
-		_printf0_("\tice front        = " << ice_front_x/1000 << "km.\n"); 
-		_printf0_("\tcritical x-coord = " << global_min_x/1000 << "km.\n");
-		// _printf0_("\tIdentified " << ice_front_area/1e6 << " km^2 at the ice front.\n");
-		// _printf0_("\tPropagated " << aflipped/1e6 << " km^2 into ice interior.\n");
-
-		/* the constraint is for current timestep only */
-		// if (aflipped>=1.0*ice_front_area) {
-		if (fabs(ice_front_x-global_min_x)>=min_iceberg_size && ice_front_x>global_min_x && perform_calving) { // minimum iceberg size threshold (parameter-controlled)
-			for(Object* & object : femmodel->elements->objects){
-				Element* element  = xDynamicCast<Element*>(object);
-				int      numnodes = element->GetNumberOfNodes();
-				Gauss*   gauss    = element->NewGauss();
-				Input *crevassedepth_input    = element->GetInput(CrevasseDepthEnum);          _assert_(crevassedepth_input);
-				Input *thickness_input        = element->GetInput(ThicknessEnum);              _assert_(thickness_input);
-
-				// Check if this element has static SPC data
-				Input* spc_input = element->GetInput(SpcLevelsetEnum);
-
-				/*Potentially constrain nodes of this element*/
-				for(int in=0;in<numnodes;in++){
-					// gauss->GaussNode(element->GetElementType(),in);
-					gauss->GaussVertex(in);
-					Node* node=element->GetNode(in);
-					if(!node->IsActive()) continue;
-
-					// Check if this node has a static SPC that should be preserved
-					bool has_static_spc = false;
-					if(spc_input){
-						IssmDouble spc_value;
-						spc_input->GetInputValue(&spc_value, gauss);
-						if(!xIsNan<IssmDouble>(spc_value)){
-							has_static_spc = true;
-						}
-					}
-
-					// Only apply/clear dynamic calving constraints if no static SPC exists
-					if(!has_static_spc){
-						int vertex_index = in;
-						if (element->vertices[vertex_index]->x >= global_min_x) {
-							node->ApplyConstraint(0,+1.);
-						}
-						else {
-							/* no ice, set no spc */
-							node->DofInFSet(0);
-						}
-					}
-					// If static SPC exists, leave it unchanged
-				}
-				delete gauss;
-			}
-			// Set flag to trigger AMR
-			femmodel->parameters->SetParam(1.0, CalvingOccurredEnum);
-			_printf0_("\tExecuted calving.\n");
-		} else {
-			// Reset flag - no calving this timestep
-			femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
-			_printf0_("\tDid not execute calving.\n");
-		}
-
-		
-		xDelete<IssmDouble>(averaged_s_xx);
-		xDelete<IssmDouble>(averaged_s_yy);
-		xDelete<IssmDouble>(constraint_nodes);
-	}
-
-	/*Default, do nothing*/
-	return;
+  /*Default, do nothing*/
+  return;
 }
