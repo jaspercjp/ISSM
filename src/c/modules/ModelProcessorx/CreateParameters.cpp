@@ -157,6 +157,7 @@ void CreateParameters(Parameters* parameters,IoModel* iomodel,char* rootpath,FIL
 	/*Basal forcing parameters*/
 	parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.model",BasalforcingsEnum));
 	iomodel->FindConstant(&basalforcing_model,"md.basalforcings.model");
+	_printf0_("Basal forcing model: " << basalforcing_model << " -- "  << EnumToStringx(basalforcing_model));
 	switch(basalforcing_model){
 		case FloatingMeltRateEnum:
 			/*Nothing to add to parameters*/
@@ -247,44 +248,81 @@ void CreateParameters(Parameters* parameters,IoModel* iomodel,char* rootpath,FIL
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.gamma_0",BasalforcingsIsmip6Gamma0Enum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.islocal",BasalforcingsIsmip6IsLocalEnum));
 			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.delta_t");
-			parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6DeltaTEnum,transparam,N));
+			parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6DeltaTEnum,transparam,max(M,N)));
 			xDelete<IssmDouble>(transparam);
 			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.tf_depths");
-			parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6TfDepthsEnum,transparam,N));
+			parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6TfDepthsEnum,transparam,max(M,N)));
 			xDelete<IssmDouble>(transparam);
+
 			break;
 		case BeckmannGoosseFloatingMeltRateEnum:
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.isthermalforcing",BasalforcingsIsThermalForcingEnum));
 			break;
 		case LinearFloatingMeltRatearmaEnum:
 			/*Add parameters that are not in standard nbvertices format*/
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_basins",BasalforcingsLinearNumBasinsEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_breaks",BasalforcingsLinearNumBreaksEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_params",BasalforcingsLinearNumParamsEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.ar_order",BasalforcingsARMAarOrderEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.ma_order",BasalforcingsARMAmaOrderEnum));
-         parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.arma_timestep",BasalforcingsARMATimestepEnum));
-         iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.datebreaks");
-         parameters->AddObject(new DoubleMatParam(BasalforcingsARMAdatebreaksEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.polynomialparams");
-         parameters->AddObject(new DoubleMatParam(BasalforcingsARMApolyparamsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.arlag_coefs");
-         parameters->AddObject(new DoubleMatParam(BasalforcingsARMAarlagcoefsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.malag_coefs");
-         parameters->AddObject(new DoubleMatParam(BasalforcingsARMAmalagcoefsEnum,transparam,M,N));
-         xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.upperwater_melting_rate");
-         parameters->AddObject(new DoubleVecParam(BasalforcingsUpperwaterMeltingRateEnum,transparam,N));
-         xDelete<IssmDouble>(transparam);
-         iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.upperwater_elevation");
-         parameters->AddObject(new DoubleVecParam(BasalforcingsUpperwaterElevationEnum,transparam,N));
-         xDelete<IssmDouble>(transparam);
-			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.deepwater_elevation");
-         parameters->AddObject(new DoubleVecParam(BasalforcingsDeepwaterElevationEnum,transparam,N));
-         xDelete<IssmDouble>(transparam);
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_basins",BasalforcingsLinearNumBasinsEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_breaks",BasalforcingsLinearNumBreaksEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_params",BasalforcingsLinearNumParamsEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.ar_order",BasalforcingsARMAarOrderEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.ma_order",BasalforcingsARMAmaOrderEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.arma_timestep",BasalforcingsARMATimestepEnum));
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.datebreaks");
+			parameters->AddObject(new DoubleMatParam(BasalforcingsARMAdatebreaksEnum,transparam,M,N));
+			xDelete<IssmDouble>(transparam);
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.polynomialparams");
+			parameters->AddObject(new DoubleMatParam(BasalforcingsARMApolyparamsEnum,transparam,M,N));
+			xDelete<IssmDouble>(transparam);
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.arlag_coefs");
+			parameters->AddObject(new DoubleMatParam(BasalforcingsARMAarlagcoefsEnum,transparam,M,N));
+			xDelete<IssmDouble>(transparam);
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.malag_coefs");
+			parameters->AddObject(new DoubleMatParam(BasalforcingsARMAmalagcoefsEnum,transparam,M,N));
+			xDelete<IssmDouble>(transparam);
+				iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.upperwater_melting_rate");
+			parameters->AddObject(new DoubleVecParam(BasalforcingsUpperwaterMeltingRateEnum,transparam,N));
+			xDelete<IssmDouble>(transparam);
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.upperwater_elevation");
+			parameters->AddObject(new DoubleVecParam(BasalforcingsUpperwaterElevationEnum,transparam,N));
+			xDelete<IssmDouble>(transparam);
+				iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.deepwater_elevation");
+			parameters->AddObject(new DoubleVecParam(BasalforcingsDeepwaterElevationEnum,transparam,N));
+			xDelete<IssmDouble>(transparam);
+			break;
+		case BasalforcingsIsmip6ExplicitEnum:
+			_printf0_("Using ISMIP6 Explicit Parametrization ... Created by J. Chen 2026\n");
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.num_basins",BasalforcingsIsmip6NumBasinsEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.gamma_0",BasalforcingsIsmip6Gamma0Enum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.islocal",BasalforcingsIsmip6IsLocalEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.isslope",BasalforcingsIsmip6IsSlopeEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.lambda_1",BasalforcingsIsmip6ExplicitLambda1Enum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.lambda_2",BasalforcingsIsmip6ExplicitLambda2Enum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.lambda_3",BasalforcingsIsmip6ExplicitLambda3Enum));
+			
+			iomodel->FetchData(&transparam,&M,&N,"md.basalforcings.tf_depths");
+			parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6TfDepthsEnum,transparam,max(M,N)));
+			xDelete<IssmDouble>(transparam);
+
+			{
+				IssmDouble** matrices = NULL;
+				int*         mdims    = NULL;
+				int*         ndims    = NULL;
+				int          numrecords;
+
+				iomodel->FetchData(&matrices,&mdims,&ndims,&numrecords,"md.basalforcings.ocean_temperature");
+				parameters->AddObject(new DoubleMatArrayParam(BasalforcingsIsmip6ExplicitOceanTemperatureEnum,matrices,numrecords,mdims,ndims));
+				for(int i=0;i<numrecords;i++) xDelete<IssmDouble>(matrices[i]);
+				xDelete<IssmDouble*>(matrices);
+				xDelete<int>(mdims);
+				xDelete<int>(ndims);
+
+				iomodel->FetchData(&matrices,&mdims,&ndims,&numrecords,"md.basalforcings.ocean_salinity");
+				parameters->AddObject(new DoubleMatArrayParam(BasalforcingsIsmip6ExplicitOceanSalinityEnum,matrices,numrecords,mdims,ndims));
+				for(int i=0;i<numrecords;i++) xDelete<IssmDouble>(matrices[i]);
+				xDelete<IssmDouble*>(matrices);
+				xDelete<int>(mdims);
+				xDelete<int>(ndims);
+			}
+			_printf_("CreateParameters: Created ISMIP6 Explicit Parametrization\n");
 			break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");

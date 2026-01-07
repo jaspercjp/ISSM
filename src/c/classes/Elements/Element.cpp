@@ -2228,8 +2228,12 @@ void       Element::DatasetInputAdd(int enum_type,IssmDouble* vector,Inputs* inp
 
 		/*Recover vertices ids needed to initialize inputs*/
 		_assert_(iomodel->elements);
+		if(!iomodel->my_vertices_lids) _error_("iomodel->my_vertices_lids is NULL");
+		if(NUM_VERTICES > MAXVERTICES) _error_("NUM_VERTICES (" << NUM_VERTICES << ") exceeds MAXVERTICES (" << MAXVERTICES << ")");
+
 		for(int i=0;i<NUM_VERTICES;i++){
 			vertexids[i] =reCast<int>(iomodel->elements[NUM_VERTICES*this->Sid()+i]); //ids for vertices are in the elements array from Matlab
+			if(vertexids[i]<=0 || vertexids[i]>iomodel->numberofvertices) _error_("Invalid vertex id " << vertexids[i] << " for element " << this->id << " (numberofvertices: " << iomodel->numberofvertices << ")");
 			vertexlids[i]=iomodel->my_vertices_lids[vertexids[i]-1];
 		}
 
@@ -2261,6 +2265,44 @@ void       Element::DatasetInputAdd(int enum_type,IssmDouble* vector,Inputs* inp
 				}
 			}
 			xDelete<IssmDouble>(times);
+		}
+		else if(iomodel->domaintype==Domain3DEnum){
+			bool ismip6explicit_handled = false;
+			int basalforcing_model, num2d=0;
+			iomodel->FindConstant(&basalforcing_model,"md.basalforcings.model");
+
+			if(basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+				iomodel->FindConstant(&num2d,"md.mesh.numberofvertices2d");
+				if(num2d<=0) _error_("Invalid numberofvertices2d: " << num2d);
+				if(!inputs) _error_("inputs is NULL");
+
+				if(M==num2d){
+					ismip6explicit_handled = true;
+					// if(!this->IsOnBase()) return; 
+
+					_printf0_("Debug: Processing element " << this->id << " num2d=" << num2d << "\n");
+					for(int i=0;i<NUM_VERTICES;i++){
+						int idx = (vertexids[i]-1)%num2d;
+						if (idx < 0 || idx >= M) _error_("Index out of bounds detected for element " << this->id << ": idx=" << idx << " M=" << M);
+						values[i]=vector[idx];
+					}
+
+					_printf0_("Debug: Setting input for element " << this->id << " ObjectEnum=" << this->ObjectEnum() << "\n");
+					switch(this->ObjectEnum()){
+						case TriaEnum:  
+							inputs->SetTriaDatasetInput(enum_type,input_id,P1Enum,NUM_VERTICES,vertexlids,values); 
+							break;
+						case PentaEnum: 
+							inputs->SetPentaDatasetInput(enum_type,input_id,P1Enum,NUM_VERTICES,vertexlids,values); 
+							break;
+						default: _error_("Not implemented yet for "<<this->ObjectEnum());
+					}
+				}
+				else if(M==num2d+1){
+					_error_("time dependent version of explicit parametrization not implemented yet");
+				}
+			}
+			if(!ismip6explicit_handled) _error_("not implemented yet (M="<<M<<")");
 		}
 		else{
 			_error_("not implemented yet (M="<<M<<")");
@@ -2430,6 +2472,8 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	int         basinid,num_basins,M,N;
 	IssmDouble  tf,gamma0,base,delta_t_basin,mean_tf_basin,absval,meltanomaly;
 	bool        islocal;
+	int         isslope = 0;
+	IssmDouble sine_slope_mag;
 	IssmDouble* delta_t = NULL;
 	IssmDouble* mean_tf = NULL;
 	IssmDouble* depths  = NULL;
@@ -2453,6 +2497,7 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	this->parameters->FindParam(&gamma0,BasalforcingsIsmip6Gamma0Enum);
 	this->parameters->FindParam(&delta_t,&M,BasalforcingsIsmip6DeltaTEnum);    _assert_(M==num_basins);
 	this->parameters->FindParam(&islocal,BasalforcingsIsmip6IsLocalEnum);
+	this->parameters->FindParam(&isslope,BasalforcingsIsmip6IsSlopeEnum);
 	if(!islocal) {
 		this->parameters->FindParam(&mean_tf,&N,BasalforcingsIsmip6AverageTfEnum); _assert_(N==num_basins);
 	}
@@ -2462,9 +2507,18 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	if(!islocal) mean_tf_basin = mean_tf[basinid];
 
 	/*Compute melt rate for Local and Nonlocal parameterizations*/
+	Input* baseslopex_input = this->GetInput(BaseSlopeXEnum); _assert_(baseslopex_input);
+	Input* baseslopey_input = this->GetInput(BaseSlopeYEnum); _assert_(baseslopey_input);
+	IssmDouble slopex,slopey;
+
 	Gauss* gauss=this->NewGauss();
 	for(int i=0;i<numvertices;i++){
 		gauss->GaussVertex(i);
+
+		baseslopex_input->GetInputValue(&slopex,gauss);
+		baseslopey_input->GetInputValue(&slopey,gauss);
+		sine_slope_mag = sinf(sqrt(slopex*slopex + slopey*slopey));
+
 		tf_input->GetInputValue(&tf,gauss);
 		meltanomaly_input->GetInputValue(&meltanomaly,gauss);
 		if(!islocal) {
@@ -2475,6 +2529,8 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 		else{
 			basalmeltrate[i] = gamma0*pow((rhow*cp)/(rhoi*lf),2)*pow(max(tf+delta_t_basin,0.),2) + meltanomaly;
 		}
+
+		if(isslope==1) basalmeltrate[i] *= sine_slope_mag;
 	}
 
 	/*Return basal melt rate*/
@@ -2483,6 +2539,112 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	/*Cleanup and return*/
 	delete gauss;
 	xDelete<IssmDouble>(delta_t);
+	xDelete<IssmDouble>(mean_tf);
+	xDelete<IssmDouble>(depths);
+
+}/*}}}*/
+void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
+
+	if(!this->IsIceInElement() || this->IsAllGrounded() || !this->IsOnBase()) return;
+
+	int         basinid,num_basins,M,N;
+	IssmDouble  tf,gamma0,base,mean_tf_basin,absval;
+	bool        islocal;
+	int         isslope = 0;
+	IssmDouble sine_slope_mag;
+	// IssmDouble* delta_t = 0;
+	IssmDouble* mean_tf = NULL;
+	IssmDouble* depths  = NULL;
+
+	/*Allocate some arrays*/
+	const int numvertices = this->GetNumberOfVertices();
+	IssmDouble basalmeltrate[MAXVERTICES];
+
+	/*Get variables*/
+	_printf0_("\t\tgetting variables\n");
+	IssmDouble rhoi = this->FindParam(MaterialsRhoIceEnum);
+	IssmDouble rhow = this->FindParam(MaterialsRhoSeawaterEnum);
+	IssmDouble lf   = this->FindParam(MaterialsLatentheatEnum);
+	IssmDouble cp   = this->FindParam(MaterialsMixedLayerCapacityEnum);
+
+	/*Hard code sea water density to be consistent with ISMIP6 documentation*/
+	rhow = 1028.;
+
+	/* Get parameters and inputs */
+	_printf0_("\t\tgetting parameters and inputs\n");
+	this->GetInputValue(&basinid,BasalforcingsIsmip6BasinIdEnum);
+	this->parameters->FindParam(&num_basins,BasalforcingsIsmip6NumBasinsEnum);
+	this->parameters->FindParam(&gamma0,BasalforcingsIsmip6Gamma0Enum);
+
+	if(gamma0==0.){
+		for(int i=0;i<numvertices;i++) basalmeltrate[i]=0.;
+		this->AddInput(BasalforcingsFloatingiceMeltingRateEnum,basalmeltrate,P1DGEnum);
+		return;
+	}
+
+	// this->parameters->FindParam(&delta_t,&M,BasalforcingsIsmip6DeltaTEnum);    _assert_(M==num_basins);
+	this->parameters->FindParam(&islocal,BasalforcingsIsmip6IsLocalEnum);
+	this->parameters->FindParam(&isslope,BasalforcingsIsmip6IsSlopeEnum);
+	if(!islocal) {
+		this->parameters->FindParam(&mean_tf,&N,BasalforcingsIsmip6AverageTfEnum); _assert_(N==num_basins);
+	}
+	Input* tf_input = this->GetInput(BasalforcingsIsmip6TfShelfEnum);              _assert_(tf_input);
+	// Input* meltanomaly_input = this->GetInput(BasalforcingsIsmip6MeltAnomalyEnum); _assert_(meltanomaly_input);
+	// delta_t_basin = delta_t[basinid];
+	if(!islocal) mean_tf_basin = mean_tf[basinid];
+
+	/*Compute melt rate for Local and Nonlocal parameterizations*/
+	_printf0_("\t\tgetting inputs\n");
+	Input* surface_input   = NULL;
+	Input* thickness_input = NULL;
+
+	if (isslope){
+		surface_input   = this->GetInput(SurfaceEnum);   _assert_(surface_input);
+		thickness_input = this->GetInput(ThicknessEnum); _assert_(thickness_input);
+	}
+	IssmDouble slopes_surface[3], slopes_thickness[3];
+	IssmDouble* xyz_list = NULL;
+	this->GetVerticesCoordinates(&xyz_list);
+
+	_printf0_("\t\tcalculating basal slopes and melt rates\n");
+	Gauss* gauss=this->NewGauss();
+	for(int i=0;i<numvertices;i++){
+		gauss->GaussVertex(i);
+
+		if(isslope){
+			surface_input->GetInputDerivativeValue(&slopes_surface[0],xyz_list,gauss);
+			thickness_input->GetInputDerivativeValue(&slopes_thickness[0],xyz_list,gauss);
+			
+			// Gradient of Draft = Gradient of (Surface - Thickness)
+			IssmDouble slope_x = slopes_surface[0] - slopes_thickness[0];
+			IssmDouble slope_y = slopes_surface[1] - slopes_thickness[1];
+
+			sine_slope_mag = sinf(atanf(sqrt(slope_x*slope_x + slope_y*slope_y)));
+		}
+
+		tf_input->GetInputValue(&tf,gauss);
+		// meltanomaly_input->GetInputValue(&meltanomaly,gauss);
+		if(!islocal) {
+			absval = mean_tf_basin;
+			if (absval<0) {absval = -1.*absval;}
+			basalmeltrate[i] = gamma0*pow((rhow*cp)/(rhoi*lf),2)*(tf)*absval;
+		}
+		else{
+			basalmeltrate[i] = gamma0*pow((rhow*cp)/(rhoi*lf),2)*pow(max(tf,0.),2);
+		}
+
+		if(isslope==1) basalmeltrate[i] *= sine_slope_mag;
+	}
+	
+	xDelete<IssmDouble>(xyz_list);
+
+	/*Return basal melt rate*/
+	_printf0_("\t\tadding basal melt rates to input\n");
+	this->AddInput(BasalforcingsFloatingiceMeltingRateEnum,basalmeltrate,P1DGEnum);
+
+	/*Cleanup and return*/
+	delete gauss;
+	// xDelete<IssmDouble>(delta_t);
 	xDelete<IssmDouble>(mean_tf);
 	xDelete<IssmDouble>(depths);
 

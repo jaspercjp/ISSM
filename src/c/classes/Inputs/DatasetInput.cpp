@@ -240,6 +240,27 @@ TransientInput* DatasetInput::SetTransientInput(int id,IssmDouble* times,int num
 	return input;
 }
 /*}}}*/
+void DatasetInput::Serve(int numindices,int* indices){/*{{{*/
+
+	for(int i=0;i<this->numids;i++){
+		if(this->inputs[i]){
+			switch(this->inputs[i]->ObjectEnum()){
+				case TriaInputEnum:
+					xDynamicCast<TriaInput*>(this->inputs[i])->Serve(numindices,indices);
+					break;
+				case PentaInputEnum:
+					xDynamicCast<PentaInput*>(this->inputs[i])->Serve(numindices,indices);
+					break;
+				case TransientInputEnum:
+					//xDynamicCast<TransientInput*>(this->inputs[i])->Serve(numindices,indices);
+					break;
+				default:
+					_error_("Input enum " << EnumToStringx(this->inputs[i]->ObjectEnum()) << " not supported yet");
+			}
+		}
+	}
+}
+/*}}}*/
 void DatasetInput::GetInputValue(IssmDouble* pvalue,Gauss* gauss,int id){ /*{{{*/
 
 	int  index = -1;

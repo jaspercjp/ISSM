@@ -2,6 +2,7 @@
 #include "../toolkits/toolkits.h"
 #include "../classes/classes.h"
 #include "../shared/shared.h"
+#include "../classes/Inputs/DatasetInput.h"
 #include "../modules/modules.h"
 
 /*Model processing*/
@@ -536,6 +537,33 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	IssmDouble  mixed_layer_capacity= element->FindParam(MaterialsMixedLayerCapacityEnum);
 	IssmDouble  thermal_exchange_vel= element->FindParam(MaterialsThermalExchangeVelocityEnum);
 
+	/*Intermediaries for Explicit forcing*/
+	int         num_depths,basalforcing_model;
+	IssmDouble  lambda1, lambda2, lambda3;
+	IssmDouble* tf_depths = NULL;
+	DatasetInput* sal_input = NULL;
+
+	element->FindParam(&basalforcing_model,BasalforcingsEnum);
+	if(basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+		// _printf0_("thermal analysis: fetching parameters from ismip6explicit parametrization\n");
+		sal_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum);
+		
+		/*Manual Serve*/
+		int* vertexlids = xNew<int>(numnodes);
+		element->GetVerticesLidList(vertexlids);
+		sal_input->Serve(numnodes,vertexlids);
+		xDelete<int>(vertexlids);
+
+		// _printf0_("\tthermal analysis: fetched salinity\n");
+		element->parameters->FindParam(&tf_depths,&num_depths,BasalforcingsIsmip6TfDepthsEnum); _assert_(tf_depths);
+		for(int i=0;i<num_depths;i++) tf_depths[i] = -tf_depths[i]; /*Make positive for binary search*/
+		// _printf0_("\tthermal analysis: made tf depths positive\n");
+		lambda1=element->FindParam(BasalforcingsIsmip6ExplicitLambda1Enum);
+		lambda2=element->FindParam(BasalforcingsIsmip6ExplicitLambda2Enum);
+		lambda3=element->FindParam(BasalforcingsIsmip6ExplicitLambda3Enum);
+		// _printf0_("\tthermal analysis: finished fetching parameters\n");
+	}
+
 	/* Start  looping on the number of gaussian points: */
 	Gauss* gauss=element->NewGaussBase(4);
 	while(gauss->next()){
@@ -543,8 +571,51 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 		element->JacobianDeterminantBase(&Jdet,xyz_list_base,gauss);
 		element->NodalFunctions(basis,gauss);
 
-		pressure_input->GetInputValue(&pressure,gauss);
-		t_pmp=element->TMeltingPoint(pressure);
+
+		if(basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+
+			// _printf0_("thermal analysis: calculating liquidus relation\n");
+
+			// _printf0_("\tthermal analysis: recovering z\n");
+			IssmDouble z = 0.;
+			for(int i=0;i<numnodes;i++) z += basis[i]*xyz_list_base[i*3+2];
+			
+			// _printf0_("\tthermal analysis: recovering depth\n");
+			IssmDouble depth = -z;
+			int offset;
+			int found=binary_search(&offset,depth,tf_depths,num_depths);
+			if(!found) _error_("depth not found");
+
+			// _printf0_("\tthermal analysis: recovering salinity\n");
+			IssmDouble sal;
+			if (offset==-1){
+				/*get values for the first depth: */
+				_assert_(depth<=tf_depths[0]);
+				sal_input->GetInputValue(&sal,gauss,0);
+			}
+			else if(offset==num_depths-1){
+				/*get values for the last time: */
+				_assert_(depth>=tf_depths[num_depths-1]);
+				sal_input->GetInputValue(&sal,gauss,num_depths-1);
+			}
+			else {
+				/*get values between two times [offset:offset+1], Interpolate linearly*/
+				_assert_(depth>=tf_depths[offset] && depth<tf_depths[offset+1]);
+				IssmDouble deltaz=tf_depths[offset+1]-tf_depths[offset];
+				IssmDouble alpha2=(depth-tf_depths[offset])/deltaz;
+				IssmDouble alpha1=(1.-alpha2);
+				IssmDouble sal1,sal2;
+				sal_input->GetInputValue(&sal1,gauss,offset);
+				sal_input->GetInputValue(&sal2,gauss,offset+1);
+				sal = alpha1*sal1 + alpha2*sal2;
+			}
+			t_pmp=lambda1*sal + lambda2 + lambda3*z + 273.0;
+			// _printf0_("\t t_pmp = " << t_pmp << "K \n");
+		}
+		else{
+			pressure_input->GetInputValue(&pressure,gauss);
+			t_pmp=element->TMeltingPoint(pressure);
+		}
 
 		scalar_ocean=gauss->weight*Jdet*rho_water*mixed_layer_capacity*thermal_exchange_vel*(t_pmp)/(heatcapacity*rho_ice);
 		if(reCast<bool,IssmDouble>(dt)) scalar_ocean=dt*scalar_ocean;
@@ -553,6 +624,8 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	}
 
 	/*Clean up and return*/
+	/*Clean up and return*/
+	if(tf_depths) xDelete<IssmDouble>(tf_depths);
 	delete gauss;
 	xDelete<IssmDouble>(basis);
 	xDelete<IssmDouble>(xyz_list_base);

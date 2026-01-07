@@ -156,6 +156,9 @@ void StressbalanceVerticalAnalysis::UpdateElements(Elements* elements,Inputs* in
 		case BasalforcingsIsmip6Enum:
 			iomodel->FetchDataToInput(inputs,elements,"md.basalforcings.basin_id",BasalforcingsIsmip6BasinIdEnum);
 			break;
+		case BasalforcingsIsmip6ExplicitEnum:
+			iomodel->FetchDataToInput(inputs,elements,"md.basalforcings.basin_id",BasalforcingsIsmip6BasinIdEnum);
+			break;
 		case BeckmannGoosseFloatingMeltRateEnum:
 			bool isthermalforcing;
          iomodel->FindConstant(&isthermalforcing,"md.basalforcings.isthermalforcing");

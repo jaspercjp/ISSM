@@ -1358,7 +1358,6 @@ void LevelsetAnalysis::UpdateConstraints(FemModel *femmodel) { /*{{{*/
     delete vec_s_xx; delete vec_s_yy; delete vec_count;
     xDelete<IssmDouble>(local_count);
 
-
     /* Find all elements that are on the ice front. (may not be needed in the future) */
     IssmDouble local_ice_front_area = 0;
     IssmDouble local_ice_front_x = 2e11;

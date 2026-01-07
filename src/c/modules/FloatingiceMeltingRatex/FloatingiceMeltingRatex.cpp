@@ -23,6 +23,7 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 
 	/*First, get BMB model from parameters*/
 	femmodel->parameters->FindParam(&basalforcing_model,BasalforcingsEnum);
+	if(basalforcing_model==8) basalforcing_model=BasalforcingsIsmip6ExplicitEnum;
 
 	/*branch to correct module*/
 	switch(basalforcing_model){
@@ -49,6 +50,10 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 		case BasalforcingsIsmip6Enum:
 			if(VerboseSolution())_printf0_("   call ISMIP 6 Floating melting rate module\n");
 			FloatingiceMeltingRateIsmip6x(femmodel);
+			break;
+		case BasalforcingsIsmip6ExplicitEnum:
+			if(VerboseSolution())_printf0_("   call ISMIP 6 Explicit Floating melting rate module\n");
+			FloatingiceMeltingRateIsmip6Explicitx(femmodel);
 			break;
 		case BeckmannGoosseFloatingMeltRateEnum:
 			if(VerboseSolution())_printf0_("        call BeckmannGoosse Floating melting rate module\n");
@@ -121,7 +126,7 @@ void FloatingiceMeltingRateIsmip6x(FemModel* femmodel){/*{{{*/
 			continue;
 		}
 
-		/*Get TF on all vertices*/
+		/*Get TF on all vertices using linear interpolation*/
 		IssmDouble*    tf_test        = xNew<IssmDouble>(numvertices);
 		IssmDouble*    depth_vertices = xNew<IssmDouble>(numvertices);
 		DatasetInput* tf_input = element->GetDatasetInput(BasalforcingsIsmip6TfEnum); _assert_(tf_input);
@@ -203,6 +208,158 @@ void FloatingiceMeltingRateIsmip6x(FemModel* femmodel){/*{{{*/
 	for(Object* & object : femmodel->elements->objects){
       Element* element = xDynamicCast<Element*>(object);
 		element->Ismip6FloatingiceMeltingRate();
+	}
+
+	/*Cleanup and return */
+	xDelete<IssmDouble>(tf_weighted_avg);
+	xDelete<IssmDouble>(tf_weighted_avg_cpu);
+	xDelete<IssmDouble>(areas_summed);
+	xDelete<IssmDouble>(areas_summed_cpu);
+	xDelete<IssmDouble>(tf_depths);
+}
+/*{{{*/
+void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
+
+	int         num_basins, basinid, num_depths, domaintype;
+	IssmDouble  area, tf, base, time;
+	bool        islocal;
+	IssmDouble* tf_depths = NULL;
+	IssmDouble lambda1, lambda2, lambda3;
+
+	femmodel->parameters->FindParam(&num_basins,BasalforcingsIsmip6NumBasinsEnum);
+	femmodel->parameters->FindParam(&tf_depths,&num_depths,BasalforcingsIsmip6TfDepthsEnum); _assert_(tf_depths);
+	femmodel->parameters->FindParam(&islocal,BasalforcingsIsmip6IsLocalEnum);
+	femmodel->parameters->FindParam(&lambda1,BasalforcingsIsmip6ExplicitLambda1Enum);
+	femmodel->parameters->FindParam(&lambda2,BasalforcingsIsmip6ExplicitLambda2Enum);
+	femmodel->parameters->FindParam(&lambda3,BasalforcingsIsmip6ExplicitLambda3Enum);
+
+	/*Binary search works for vectors that are sorted in increasing order only, make depths positive*/
+	for(int i=0;i<num_depths;i++) tf_depths[i] = -tf_depths[i];
+
+	IssmDouble* tf_weighted_avg     = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* tf_weighted_avg_cpu = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* areas_summed        = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* areas_summed_cpu    = xNewZeroInit<IssmDouble>(num_basins);
+
+	/*Get TF at each ice shelf point - linearly intepolate in depth and time*/
+
+	_printf0_("\tcomputing thermal forcing at each element\n");
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		int      numvertices = element->GetNumberOfVertices();
+
+		/*Set melt to 0 if non floating*/
+		if(!element->IsIceInElement() || !element->IsAllFloating() || !element->IsOnBase()){
+			IssmDouble* values = xNewZeroInit<IssmDouble>(numvertices);
+			element->AddInput(BasalforcingsFloatingiceMeltingRateEnum,values,P1DGEnum);
+			element->AddInput(BasalforcingsIsmip6TfShelfEnum,values,P1DGEnum);
+			xDelete<IssmDouble>(values);
+			continue;
+		}
+
+		/*Get TF on all vertices using linear interpolation*/
+		IssmDouble*    tf_test        = xNew<IssmDouble>(numvertices);
+		IssmDouble*    depth_vertices = xNew<IssmDouble>(numvertices);
+		DatasetInput* temp_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum); _assert_(temp_input);
+		DatasetInput* sal_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum); _assert_(sal_input);
+		
+		/*We must serve the DatasetInput manually as it is not part of the standard element inputs served in Element::Serve*/
+		int* vertexlids = xNew<int>(numvertices);
+		element->GetVerticesLidList(vertexlids);
+		temp_input->Serve(numvertices,vertexlids);
+		sal_input->Serve(numvertices,vertexlids);
+		xDelete<int>(vertexlids);
+		
+		element->GetInputListOnVertices(&depth_vertices[0],BaseEnum);
+
+		Gauss* gauss=element->NewGauss();
+		for(int iv=0;iv<numvertices;iv++){
+			gauss->GaussVertex(iv);
+
+			/*Find out where the ice shelf base is within tf_depths*/
+			IssmDouble depth = -depth_vertices[iv]; /*NOTE: make sure we are dealing with depth>0*/
+			int offset;
+			int found=binary_search(&offset,depth,tf_depths,num_depths);
+			if(!found) _error_("depth not found");
+
+			IssmDouble temp, sal;
+
+			if (offset==-1){
+				/*get values for the first depth: */
+				_assert_(depth<=tf_depths[0]);
+				temp_input->GetInputValue(&temp,gauss,0);
+				sal_input->GetInputValue(&sal,gauss,0);
+			}
+			else if(offset==num_depths-1){
+				/*get values for the last time: */
+				_assert_(depth>=tf_depths[num_depths-1]);
+				temp_input->GetInputValue(&temp,gauss,num_depths-1);
+				sal_input->GetInputValue(&sal,gauss,num_depths-1);
+			}
+			else {
+				/*get values between two times [offset:offset+1], Interpolate linearly*/
+				_assert_(depth>=tf_depths[offset] && depth<tf_depths[offset+1]);
+				IssmDouble deltaz=tf_depths[offset+1]-tf_depths[offset];
+				IssmDouble alpha2=(depth-tf_depths[offset])/deltaz;
+				IssmDouble alpha1=(1.-alpha2);
+				IssmDouble temp1, temp2, sal1, sal2;
+				
+				temp_input->GetInputValue(&temp1,gauss,offset);
+				temp_input->GetInputValue(&temp2,gauss,offset+1);
+				temp = alpha1*temp1 + alpha2*temp2;
+
+				sal_input->GetInputValue(&sal1,gauss,offset);
+				sal_input->GetInputValue(&sal2,gauss,offset+1);
+				sal = alpha1*sal1 + alpha2*sal2;
+			}
+			
+			/* Calculate TF = T - (lambda1*S + lambda2 + lambda3*z) */
+			/* depth_vertices is usually negative (elevation). */
+			tf_test[iv] = temp - (lambda1 * sal + lambda2 + lambda3 * depth_vertices[iv] + 273.0);
+		}
+
+		element->AddInput(BasalforcingsIsmip6TfShelfEnum,tf_test,P1DGEnum);
+		xDelete<IssmDouble>(tf_test);
+		xDelete<IssmDouble>(depth_vertices);
+		delete gauss;
+	}
+
+	/*Compute sums of tf*area and shelf-area per cpu*/
+	if(!islocal) {
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			if(!element->IsOnBase() || !element->IsIceInElement() || !element->IsAllFloating()) continue;
+			/*Spawn basal element if on base to compute element area*/
+			Element* basalelement = element->SpawnBasalElement();
+			Input* tf_input=basalelement->GetInput(BasalforcingsIsmip6TfShelfEnum); _assert_(tf_input);
+			basalelement->GetInputValue(&basinid,BasalforcingsIsmip6BasinIdEnum);
+			Gauss* gauss=basalelement->NewGauss(1); gauss->GaussPoint(0);
+			tf_input->GetInputValue(&tf,gauss);
+			delete gauss;
+			area=basalelement->GetHorizontalSurfaceArea();
+			tf_weighted_avg[basinid]+=tf*area;
+			areas_summed[basinid]   +=area;
+			/*Delete spawned element if we are in 3D*/
+			basalelement->FindParam(&domaintype,DomainTypeEnum);
+			if(basalelement->IsSpawnedElement()){basalelement->DeleteMaterials(); delete basalelement;};
+		}
+
+		/*Syncronize across cpus*/
+		ISSM_MPI_Allreduce(tf_weighted_avg,tf_weighted_avg_cpu,num_basins,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
+		ISSM_MPI_Allreduce(areas_summed,areas_summed_cpu,num_basins,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
+
+		/*Make sure Area is not zero to avoid dividing by 0 if a basin is not present in the model*/
+		for(int k=0;k<num_basins;k++) if(areas_summed_cpu[k]==0.) areas_summed_cpu[k] = 1.;
+
+		/*Compute weighted means and save*/
+		for(int k=0;k<num_basins;k++){tf_weighted_avg_cpu[k] = tf_weighted_avg_cpu[k]/areas_summed_cpu[k];}
+		femmodel->parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6AverageTfEnum,tf_weighted_avg_cpu,num_basins));
+	}
+
+   /*Compute meltrates*/
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		element->Ismip6ExplicitFloatingiceMeltingRate();
 	}
 
 	/*Cleanup and return */
