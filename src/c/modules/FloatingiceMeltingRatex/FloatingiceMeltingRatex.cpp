@@ -233,8 +233,24 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 	femmodel->parameters->FindParam(&lambda2,BasalforcingsIsmip6ExplicitLambda2Enum);
 	femmodel->parameters->FindParam(&lambda3,BasalforcingsIsmip6ExplicitLambda3Enum);
 
+	/*Copy to local array to avoid modifying global parameters*/
+	IssmDouble* tf_depths_local = xNew<IssmDouble>(num_depths);
+	xMemCpy<IssmDouble>(tf_depths_local, tf_depths, num_depths);
+
 	/*Binary search works for vectors that are sorted in increasing order only, make depths positive*/
-	for(int i=0;i<num_depths;i++) tf_depths[i] = -tf_depths[i];
+	for(int i=0;i<num_depths;i++) tf_depths_local[i] = -tf_depths_local[i];
+
+	bool decreasing = false;
+	if (num_depths > 1 && tf_depths_local[0] > tf_depths_local[num_depths-1]) decreasing = true;
+
+	if(decreasing){
+		/*Reverse array so that it is sorted increasing for binary_search*/
+		for(int i=0; i<num_depths/2; i++){
+			IssmDouble temp = tf_depths_local[i];
+			tf_depths_local[i] = tf_depths_local[num_depths-1-i];
+			tf_depths_local[num_depths-1-i] = temp;
+		}
+	}
 
 	IssmDouble* tf_weighted_avg     = xNewZeroInit<IssmDouble>(num_basins);
 	IssmDouble* tf_weighted_avg_cpu = xNewZeroInit<IssmDouble>(num_basins);
@@ -279,38 +295,77 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 			/*Find out where the ice shelf base is within tf_depths*/
 			IssmDouble depth = -depth_vertices[iv]; /*NOTE: make sure we are dealing with depth>0*/
 			int offset;
-			int found=binary_search(&offset,depth,tf_depths,num_depths);
+			if(xIsNan<IssmDouble>(depth)) _error_("depth is NaN");
+			int found=binary_search(&offset,depth,tf_depths_local,num_depths);
 			if(!found) _error_("depth not found");
 
 			IssmDouble temp, sal;
+			int idx1, idx2;
 
-			if (offset==-1){
-				/*get values for the first depth: */
-				_assert_(depth<=tf_depths[0]);
-				temp_input->GetInputValue(&temp,gauss,0);
-				sal_input->GetInputValue(&sal,gauss,0);
-			}
-			else if(offset==num_depths-1){
-				/*get values for the last time: */
-				_assert_(depth>=tf_depths[num_depths-1]);
-				temp_input->GetInputValue(&temp,gauss,num_depths-1);
-				sal_input->GetInputValue(&sal,gauss,num_depths-1);
-			}
-			else {
-				/*get values between two times [offset:offset+1], Interpolate linearly*/
-				_assert_(depth>=tf_depths[offset] && depth<tf_depths[offset+1]);
-				IssmDouble deltaz=tf_depths[offset+1]-tf_depths[offset];
-				IssmDouble alpha2=(depth-tf_depths[offset])/deltaz;
-				IssmDouble alpha1=(1.-alpha2);
-				IssmDouble temp1, temp2, sal1, sal2;
-				
-				temp_input->GetInputValue(&temp1,gauss,offset);
-				temp_input->GetInputValue(&temp2,gauss,offset+1);
-				temp = alpha1*temp1 + alpha2*temp2;
+			if(decreasing){
+				if (offset==-1){
+					/*get values for the first depth: (originally last)*/
+					_assert_(depth<=tf_depths_local[0]);
+					idx1 = num_depths - 1 - 0;
+					temp_input->GetInputValue(&temp,gauss,idx1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					idx1 = num_depths - 1 - (num_depths-1);
+					temp_input->GetInputValue(&temp,gauss,idx1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble temp1, temp2, sal1, sal2;
 
-				sal_input->GetInputValue(&sal1,gauss,offset);
-				sal_input->GetInputValue(&sal2,gauss,offset+1);
-				sal = alpha1*sal1 + alpha2*sal2;
+					idx1 = num_depths - 1 - offset;
+					idx2 = num_depths - 1 - (offset+1);
+					
+					temp_input->GetInputValue(&temp1,gauss,idx1);
+					temp_input->GetInputValue(&temp2,gauss,idx2);
+					temp = alpha1*temp1 + alpha2*temp2;
+
+					sal_input->GetInputValue(&sal1,gauss,idx1);
+					sal_input->GetInputValue(&sal2,gauss,idx2);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
+			}
+			else{
+				if (offset==-1){
+					/*get values for the first depth: */
+					_assert_(depth<=tf_depths_local[0]);
+					temp_input->GetInputValue(&temp,gauss,0);
+					sal_input->GetInputValue(&sal,gauss,0);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					temp_input->GetInputValue(&temp,gauss,num_depths-1);
+					sal_input->GetInputValue(&sal,gauss,num_depths-1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble temp1, temp2, sal1, sal2;
+					
+					temp_input->GetInputValue(&temp1,gauss,offset);
+					temp_input->GetInputValue(&temp2,gauss,offset+1);
+					temp = alpha1*temp1 + alpha2*temp2;
+
+					sal_input->GetInputValue(&sal1,gauss,offset);
+					sal_input->GetInputValue(&sal2,gauss,offset+1);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
 			}
 			
 			/* Calculate TF = T - (lambda1*S + lambda2 + lambda3*z) */
@@ -367,7 +422,7 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 	xDelete<IssmDouble>(tf_weighted_avg_cpu);
 	xDelete<IssmDouble>(areas_summed);
 	xDelete<IssmDouble>(areas_summed_cpu);
-	xDelete<IssmDouble>(tf_depths);
+	xDelete<IssmDouble>(tf_depths_local);
 }
 /*}}}*/
 void BeckmannGoosseFloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
