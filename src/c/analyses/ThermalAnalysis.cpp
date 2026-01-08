@@ -541,6 +541,8 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	int         num_depths,basalforcing_model;
 	IssmDouble  lambda1, lambda2, lambda3;
 	IssmDouble* tf_depths = NULL;
+	IssmDouble* tf_depths_local = NULL;
+	bool decreasing = false;
 	DatasetInput* sal_input = NULL;
 
 	element->FindParam(&basalforcing_model,BasalforcingsEnum);
@@ -556,7 +558,24 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 
 		// _printf0_("\tthermal analysis: fetched salinity\n");
 		element->parameters->FindParam(&tf_depths,&num_depths,BasalforcingsIsmip6TfDepthsEnum); _assert_(tf_depths);
-		for(int i=0;i<num_depths;i++) tf_depths[i] = -tf_depths[i]; /*Make positive for binary search*/
+		
+		/*Copy to local array to avoid modifying global parameters*/
+		tf_depths_local = xNew<IssmDouble>(num_depths);
+		xMemCpy<IssmDouble>(tf_depths_local, tf_depths, num_depths);
+
+		for(int i=0;i<num_depths;i++) tf_depths_local[i] = -tf_depths_local[i]; /*Make positive for binary search*/
+
+		decreasing = false;
+		if(num_depths > 1 && tf_depths_local[0] > tf_depths_local[num_depths-1]) decreasing = true;
+
+		if(decreasing){
+			/*Reverse array so that it is sorted increasing for binary_search*/
+			for(int i=0; i<num_depths/2; i++){
+				IssmDouble temp = tf_depths_local[i];
+				tf_depths_local[i] = tf_depths_local[num_depths-1-i];
+				tf_depths_local[num_depths-1-i] = temp;
+			}
+		}
 		// _printf0_("\tthermal analysis: made tf depths positive\n");
 		lambda1=element->FindParam(BasalforcingsIsmip6ExplicitLambda1Enum);
 		lambda2=element->FindParam(BasalforcingsIsmip6ExplicitLambda2Enum);
@@ -582,32 +601,66 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 			
 			// _printf0_("\tthermal analysis: recovering depth\n");
 			IssmDouble depth = -z;
+			if(xIsNan<IssmDouble>(depth)) _error_("depth is NaN");
 			int offset;
-			int found=binary_search(&offset,depth,tf_depths,num_depths);
+			int found=binary_search(&offset,depth,tf_depths_local,num_depths);
 			if(!found) _error_("depth not found");
 
 			// _printf0_("\tthermal analysis: recovering salinity\n");
 			IssmDouble sal;
-			if (offset==-1){
-				/*get values for the first depth: */
-				_assert_(depth<=tf_depths[0]);
-				sal_input->GetInputValue(&sal,gauss,0);
+			int idx1,idx2;
+
+			if(decreasing){
+				if (offset==-1){
+					/*get values for the first depth: (which is really the last in original array)*/
+					_assert_(depth<=tf_depths_local[0]); 
+					idx1 = num_depths - 1 - 0;
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					idx1 = num_depths - 1 - (num_depths-1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble sal1,sal2;
+
+					idx1 = num_depths - 1 - offset;
+					idx2 = num_depths - 1 - (offset+1);
+
+					sal_input->GetInputValue(&sal1,gauss,idx1);
+					sal_input->GetInputValue(&sal2,gauss,idx2);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
 			}
-			else if(offset==num_depths-1){
-				/*get values for the last time: */
-				_assert_(depth>=tf_depths[num_depths-1]);
-				sal_input->GetInputValue(&sal,gauss,num_depths-1);
-			}
-			else {
-				/*get values between two times [offset:offset+1], Interpolate linearly*/
-				_assert_(depth>=tf_depths[offset] && depth<tf_depths[offset+1]);
-				IssmDouble deltaz=tf_depths[offset+1]-tf_depths[offset];
-				IssmDouble alpha2=(depth-tf_depths[offset])/deltaz;
-				IssmDouble alpha1=(1.-alpha2);
-				IssmDouble sal1,sal2;
-				sal_input->GetInputValue(&sal1,gauss,offset);
-				sal_input->GetInputValue(&sal2,gauss,offset+1);
-				sal = alpha1*sal1 + alpha2*sal2;
+			else{
+				if (offset==-1){
+					/*get values for the first depth: */
+					_assert_(depth<=tf_depths_local[0]);
+					sal_input->GetInputValue(&sal,gauss,0);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					sal_input->GetInputValue(&sal,gauss,num_depths-1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble sal1,sal2;
+					sal_input->GetInputValue(&sal1,gauss,offset);
+					sal_input->GetInputValue(&sal2,gauss,offset+1);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
 			}
 			t_pmp=lambda1*sal + lambda2 + lambda3*z + 273.0;
 			// _printf0_("\t t_pmp = " << t_pmp << "K \n");
@@ -625,7 +678,7 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 
 	/*Clean up and return*/
 	/*Clean up and return*/
-	if(tf_depths) xDelete<IssmDouble>(tf_depths);
+	if(tf_depths_local) xDelete<IssmDouble>(tf_depths_local);
 	delete gauss;
 	xDelete<IssmDouble>(basis);
 	xDelete<IssmDouble>(xyz_list_base);
