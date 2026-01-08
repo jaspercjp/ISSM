@@ -368,24 +368,9 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 				}
 			}
 			
-			if(xIsNan<IssmDouble>(temp) || xIsNan<IssmDouble>(sal)){
-				int my_rank = IssmComm::GetRank();
-				_printf_("Rank " << my_rank << " Element " << element->Id() << " Node " << iv << ": temp or sal is NaN.\n");
-				_printf_("depth=" << depth << " offset=" << offset << " idx1=" << idx1 << " idx2=" << idx2 << "\n");
-				_printf_("temp=" << temp << " sal=" << sal << "\n");
-				_error_("NaN in input data");
-			}
-
 			/* Calculate TF = T - (lambda1*S + lambda2 + lambda3*z) */
 			/* depth_vertices is usually negative (elevation). */
 			tf_test[iv] = temp - (lambda1 * sal + lambda2 + lambda3 * depth_vertices[iv] + 273.0);
-			
-			if(xIsNan<IssmDouble>(tf_test[iv])){
-				int my_rank = IssmComm::GetRank();
-				_printf_("Rank " << my_rank << " Element " << element->Id() << " Node " << iv << ": tf_test is NaN.\n");
-				_printf_("temp=" << temp << " sal=" << sal << " depth_vertices=" << depth_vertices[iv] << "\n");
-				_error_("NaN in tf_test");
-			}
 		}
 
 		element->AddInput(BasalforcingsIsmip6TfShelfEnum,tf_test,P1DGEnum);
@@ -430,12 +415,7 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 	for(Object* & object : femmodel->elements->objects){
       Element* element = xDynamicCast<Element*>(object);
 		element->Ismip6ExplicitFloatingiceMeltingRate();
-		
-		/*Check for NaN in meltrates? Ismip6ExplicitFloatingiceMeltingRate is void and adds input using AddInput*/
-		/*We can't easily check inside the element function call from here without modifying Element::Ismip6ExplicitFloatingiceMeltingRate*/
 	}
-	/*Wait, I can modify Element::Ismip6ExplicitFloatingiceMeltingRate in Element.cpp code if needed. */
-	/*But for now let's focus on inputs in this file.*/
 
 	/*Cleanup and return */
 	xDelete<IssmDouble>(tf_weighted_avg);

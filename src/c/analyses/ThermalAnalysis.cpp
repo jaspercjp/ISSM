@@ -527,7 +527,7 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	IssmDouble*    basis = xNew<IssmDouble>(numnodes);
 
 	/*Retrieve all inputs and parameters*/
-	element->GetVerticesCoordinatesBase(&xyz_list_base);
+	element->GetVerticesCoordinates(&xyz_list_base);
 	element->FindParam(&dt,TimesteppingTimeStepEnum);
 	Input*      pressure_input=element->GetInput(PressureEnum); _assert_(pressure_input);
 	IssmDouble  gravity             = element->FindParam(ConstantsGEnum);
@@ -601,21 +601,10 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 			
 			// _printf0_("\tthermal analysis: recovering depth\n");
 			IssmDouble depth = -z;
-			if(xIsNan<IssmDouble>(depth)){
-				int my_rank = IssmComm::GetRank();
-				_printf_("Rank " << my_rank << " Element " << element->Id() << ": depth is NaN. z=" << z << "\n");
-				_printf_("xyz_list_base:\n");
-				for(int k=0;k<numnodes;k++) _printf_("  Node " << k << ": " << xyz_list_base[k*3] << ", " << xyz_list_base[k*3+1] << ", " << xyz_list_base[k*3+2] << "\n");
-				_error_("depth is NaN");
-			}
+			if(xIsNan<IssmDouble>(depth)) _error_("depth is NaN");
 			int offset;
 			int found=binary_search(&offset,depth,tf_depths_local,num_depths);
-			if(!found){
-				int my_rank = IssmComm::GetRank();
-				_printf_("Rank " << my_rank << " Element " << element->Id() << ": depth not found in tf_depths. depth=" << depth << "\n");
-				_printf_("tf_depths range: " << tf_depths_local[0] << " to " << tf_depths_local[num_depths-1] << "\n");
-				_error_("depth not found");
-			}
+			if(!found) _error_("depth not found");
 
 			// _printf0_("\tthermal analysis: recovering salinity\n");
 			IssmDouble sal;
