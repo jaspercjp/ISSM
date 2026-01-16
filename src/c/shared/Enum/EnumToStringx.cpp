@@ -3080,6 +3080,7 @@ const char* EnumToStringx(int en){
 		case Outputdefinition1727Enum : return "Outputdefinition1727";
 		case Outputdefinition1728Enum : return "Outputdefinition1728";
 		case Outputdefinition1729Enum : return "Outputdefinition1729";
+		case BasalforcingsIsmip6ExplicitSlopeEnum : return "BasalforcingsIsmip6ExplicitSlope";
 		case Outputdefinition1702Enum : return "Outputdefinition1702";
 		case Outputdefinition1730Enum : return "Outputdefinition1730";
 		case Outputdefinition1731Enum : return "Outputdefinition1731";
@@ -3380,6 +3381,7 @@ const char* EnumToStringx(int en){
 		case BalancethicknessSolutionEnum : return "BalancethicknessSolution";
 		case BalancevelocityAnalysisEnum : return "BalancevelocityAnalysis";
 		case BalancevelocitySolutionEnum : return "BalancevelocitySolution";
+		case BasalforcingsIdealEnum : return "BasalforcingsIdeal";
 		case BasalforcingsIsmip6Enum : return "BasalforcingsIsmip6";
 		case BasalforcingsPicoEnum : return "BasalforcingsPico";
 		case BeckmannGoosseFloatingMeltRateEnum : return "BeckmannGoosseFloatingMeltRate";

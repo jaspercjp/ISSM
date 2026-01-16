@@ -117,6 +117,11 @@ void FieldAndEnumFromCode(int* out_enum,char** pfield,const char* string_in){/*{
 		input_enum        = BasalforcingsFloatingiceMeltingRateEnum;
 		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
 	}
+	else if(strcmp(string_in,"BasalforcingsIsmip6ExplicitSlope")==0 || strcmp(string_in,"md.basalforcings.ismip6explicit_slope")==0){
+		const char* field = "md.basalforcings.ismip6explicit_slope";
+		input_enum        = BasalforcingsIsmip6ExplicitSlopeEnum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
 	else if(strcmp(string_in,"BasalforcingsGeothermalflux")==0){
 		const char* field = "md.basalforcings.geothermalflux";
 		input_enum        = BasalforcingsGeothermalfluxEnum;
@@ -237,6 +242,26 @@ void FieldAndEnumFromCode(int* out_enum,char** pfield,const char* string_in){/*{
 		input_enum        = BasalforcingsDeepwaterMeltingRateEnum;
 		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
 	}
+	else if(strcmp(string_in,"BasalforcingsAlpha")==0 || strcmp(string_in,"md.basalforcings.alpha")==0){
+		const char* field = "md.basalforcings.alpha";
+		input_enum        = BasalforcingsIdealAlphaEnum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
+	else if(strcmp(string_in,"BasalforcingsBeta")==0 || strcmp(string_in,"md.basalforcings.beta")==0){
+		const char* field = "md.basalforcings.beta";
+		input_enum        = BasalforcingsIdealBetaEnum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
+	else if(strcmp(string_in,"BasalforcingsGamma")==0 || strcmp(string_in,"md.basalforcings.gamma")==0){
+		const char* field = "md.basalforcings.gamma";
+		input_enum        = BasalforcingsIdealGammaEnum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
+	else if(strcmp(string_in,"BasalforcingsM0")==0 || strcmp(string_in,"md.basalforcings.m0")==0){
+		const char* field = "md.basalforcings.m0";
+		input_enum        = BasalforcingsIdealM0Enum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
 	else{
 		_error_("Field \""<<string_in<<"\" not supported yet");
 	}
@@ -277,6 +302,7 @@ int IoCodeToEnumBasal(int enum_in){/*{{{*/
 		case 8: return BeckmannGoosseFloatingMeltRateEnum;
 		case 9: return LinearFloatingMeltRatearmaEnum;
 		case 10: return BasalforcingsIsmip6ExplicitEnum;
+		case 11: return BasalforcingsIdealEnum;
 		default: _error_("Marshalled Basal Forcings code \""<<enum_in<<"\" not supported yet");
 	}
 }/*}}}*/

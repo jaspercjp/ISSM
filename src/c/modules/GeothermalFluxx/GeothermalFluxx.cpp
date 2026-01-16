@@ -34,6 +34,9 @@ void GeothermalFluxx(FemModel* femmodel){/*{{{*/
 		case BeckmannGoosseFloatingMeltRateEnum:
 			/*Nothing to be done*/
 			break;
+		case BasalforcingsIdealEnum:
+			/*Nothing to be done*/
+			break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");
 	}

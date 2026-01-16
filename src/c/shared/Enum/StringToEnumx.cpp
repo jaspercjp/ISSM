@@ -80,6 +80,7 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"BasalforcingsDeepwaterMeltingRate")==0) return BasalforcingsDeepwaterMeltingRateEnum;
 	      else if (strcmp(name,"BasalforcingsDtbg")==0) return BasalforcingsDtbgEnum;
 	      else if (strcmp(name,"Basalforcings")==0) return BasalforcingsEnum;
+		  else if (strcmp(name,"BasalforcingsIdeal")==0) return BasalforcingsIdealEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6AverageTf")==0) return BasalforcingsIsmip6AverageTfEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6BasinArea")==0) return BasalforcingsIsmip6BasinAreaEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6DeltaT")==0) return BasalforcingsIsmip6DeltaTEnum;
@@ -88,6 +89,7 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"BasalforcingsIsmip6NumBasins")==0) return BasalforcingsIsmip6NumBasinsEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6IsSlope")==0) return BasalforcingsIsmip6IsSlopeEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6Explicit")==0) return BasalforcingsIsmip6ExplicitEnum;
+	      else if (strcmp(name,"BasalforcingsIsmip6ExplicitSlope")==0) return BasalforcingsIsmip6ExplicitSlopeEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6ExplicitOceanTemperature")==0) return BasalforcingsIsmip6ExplicitOceanTemperatureEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6ExplicitOceanSalinity")==0) return BasalforcingsIsmip6ExplicitOceanSalinityEnum;
 	      else if (strcmp(name,"BasalforcingsIsmip6ExplicitLambda1")==0) return BasalforcingsIsmip6ExplicitLambda1Enum;

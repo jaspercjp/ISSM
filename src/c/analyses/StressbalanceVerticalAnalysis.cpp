@@ -171,6 +171,8 @@ void StressbalanceVerticalAnalysis::UpdateElements(Elements* elements,Inputs* in
             iomodel->FetchDataToInput(inputs,elements,"md.basalforcings.ocean_thermalforcing",ThermalForcingEnum);
          }
 			break;
+		case BasalforcingsIdealEnum:
+		 	break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");
 	}

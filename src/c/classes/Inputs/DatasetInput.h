@@ -41,6 +41,7 @@ class DatasetInput: public Input{
 		void SetTriaInput(int id,int interp_in,int numinds,int* rows,IssmDouble* values_in);
 		void SetPentaInput(int id,int interp_in,int numinds,int* rows,IssmDouble* values_in);
 		TransientInput* SetTransientInput(int id,IssmDouble* times,int numtimes);
+		void SetTime(IssmDouble time);
 		void Serve(int numindices,int* indices);
 		PentaInput* GetPentaInputByOffset(int i);
 		TriaInput*  GetTriaInput(void);

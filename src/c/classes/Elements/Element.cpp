@@ -2481,7 +2481,6 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	/*Allocate some arrays*/
 	const int numvertices = this->GetNumberOfVertices();
 	IssmDouble basalmeltrate[MAXVERTICES];
-
 	/*Get variables*/
 	IssmDouble rhoi = this->FindParam(MaterialsRhoIceEnum);
 	IssmDouble rhow = this->FindParam(MaterialsRhoSeawaterEnum);
@@ -2507,17 +2506,9 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 	if(!islocal) mean_tf_basin = mean_tf[basinid];
 
 	/*Compute melt rate for Local and Nonlocal parameterizations*/
-	Input* baseslopex_input = this->GetInput(BaseSlopeXEnum); _assert_(baseslopex_input);
-	Input* baseslopey_input = this->GetInput(BaseSlopeYEnum); _assert_(baseslopey_input);
-	IssmDouble slopex,slopey;
-
 	Gauss* gauss=this->NewGauss();
 	for(int i=0;i<numvertices;i++){
 		gauss->GaussVertex(i);
-
-		baseslopex_input->GetInputValue(&slopex,gauss);
-		baseslopey_input->GetInputValue(&slopey,gauss);
-		sine_slope_mag = sinf(sqrt(slopex*slopex + slopey*slopey));
 
 		tf_input->GetInputValue(&tf,gauss);
 		meltanomaly_input->GetInputValue(&meltanomaly,gauss);
@@ -2529,8 +2520,6 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 		else{
 			basalmeltrate[i] = gamma0*pow((rhow*cp)/(rhoi*lf),2)*pow(max(tf+delta_t_basin,0.),2) + meltanomaly;
 		}
-
-		if(isslope==1) basalmeltrate[i] *= sine_slope_mag;
 	}
 
 	/*Return basal melt rate*/
@@ -2545,10 +2534,11 @@ void       Element::Ismip6FloatingiceMeltingRate(){/*{{{*/
 }/*}}}*/
 void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 
-	if(!this->IsIceInElement() || this->IsAllGrounded() || !this->IsOnBase()) return;
+	if(!this->IsIceInElement() || !this->IsAllFloating() || !this->IsOnBase()) return;
 
 	int         basinid,num_basins,M,N;
 	IssmDouble  tf,gamma0,base,mean_tf_basin,absval;
+	IssmDouble  levelset;
 	bool        islocal;
 	int         isslope = 0;
 	IssmDouble sine_slope_mag;
@@ -2559,9 +2549,9 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 	/*Allocate some arrays*/
 	const int numvertices = this->GetNumberOfVertices();
 	IssmDouble basalmeltrate[MAXVERTICES];
+	IssmDouble slopes[MAXVERTICES];
 
 	/*Get variables*/
-	_printf0_("\t\tgetting variables\n");
 	IssmDouble rhoi = this->FindParam(MaterialsRhoIceEnum);
 	IssmDouble rhow = this->FindParam(MaterialsRhoSeawaterEnum);
 	IssmDouble lf   = this->FindParam(MaterialsLatentheatEnum);
@@ -2571,7 +2561,6 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 	rhow = 1028.;
 
 	/* Get parameters and inputs */
-	_printf0_("\t\tgetting parameters and inputs\n");
 	this->GetInputValue(&basinid,BasalforcingsIsmip6BasinIdEnum);
 	this->parameters->FindParam(&num_basins,BasalforcingsIsmip6NumBasinsEnum);
 	this->parameters->FindParam(&gamma0,BasalforcingsIsmip6Gamma0Enum);
@@ -2589,37 +2578,34 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 		this->parameters->FindParam(&mean_tf,&N,BasalforcingsIsmip6AverageTfEnum); _assert_(N==num_basins);
 	}
 	Input* tf_input = this->GetInput(BasalforcingsIsmip6TfShelfEnum);              _assert_(tf_input);
+	Input* levelset_input = this->GetInput(MaskOceanLevelsetEnum);                 _assert_(levelset_input);
 	// Input* meltanomaly_input = this->GetInput(BasalforcingsIsmip6MeltAnomalyEnum); _assert_(meltanomaly_input);
 	// delta_t_basin = delta_t[basinid];
 	if(!islocal) mean_tf_basin = mean_tf[basinid];
 
 	/*Compute melt rate for Local and Nonlocal parameterizations*/
-	_printf0_("\t\tgetting inputs\n");
-	Input* surface_input   = NULL;
-	Input* thickness_input = NULL;
+	Input* slope_input = NULL;
 
 	if (isslope){
-		surface_input   = this->GetInput(SurfaceEnum);   _assert_(surface_input);
-		thickness_input = this->GetInput(ThicknessEnum); _assert_(thickness_input);
+		slope_input = this->GetInput(BasalforcingsIsmip6ExplicitSlopeEnum); _assert_(slope_input);
 	}
-	IssmDouble slopes_surface[3], slopes_thickness[3];
 	IssmDouble* xyz_list = NULL;
 	this->GetVerticesCoordinates(&xyz_list);
 
-	_printf0_("\t\tcalculating basal slopes and melt rates\n");
 	Gauss* gauss=this->NewGauss();
 	for(int i=0;i<numvertices;i++){
+		slopes[i] = 0.;
 		gauss->GaussVertex(i);
 
-		if(isslope){
-			surface_input->GetInputDerivativeValue(&slopes_surface[0],xyz_list,gauss);
-			thickness_input->GetInputDerivativeValue(&slopes_thickness[0],xyz_list,gauss);
-			
-			// Gradient of Draft = Gradient of (Surface - Thickness)
-			IssmDouble slope_x = slopes_surface[0] - slopes_thickness[0];
-			IssmDouble slope_y = slopes_surface[1] - slopes_thickness[1];
+		levelset_input->GetInputValue(&levelset,gauss);
+		if(levelset>0.){
+			basalmeltrate[i] = 0.;
+			continue;
+		}
 
-			sine_slope_mag = sinf(atanf(sqrt(slope_x*slope_x + slope_y*slope_y)));
+		if(isslope){
+			slope_input->GetInputValue(&sine_slope_mag,gauss);
+			slopes[i] = sine_slope_mag;
 		}
 
 		tf_input->GetInputValue(&tf,gauss);
@@ -2639,8 +2625,8 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 	xDelete<IssmDouble>(xyz_list);
 
 	/*Return basal melt rate*/
-	_printf0_("\t\tadding basal melt rates to input\n");
 	this->AddInput(BasalforcingsFloatingiceMeltingRateEnum,basalmeltrate,P1DGEnum);
+	// this->AddInput(BasalforcingsIsmip6ExplicitSlopeEnum,slopes,P1DGEnum); // Already added in the main loop
 
 	/*Cleanup and return*/
 	delete gauss;
@@ -2649,6 +2635,34 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 	xDelete<IssmDouble>(depths);
 
 }/*}}}*/
+void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta, IssmDouble gamma, IssmDouble m0) {
+
+	const int NUM_VERTICES = this->GetNumberOfVertices();
+	IssmDouble values[MAXVERTICES];
+	if(!this->IsIceInElement() || !this->IsAllFloating() || !this->IsOnBase()) return;
+
+	IssmDouble dist_gl[MAXVERTICES];
+	IssmDouble dist_cf[MAXVERTICES];
+	IssmDouble dist_ratio;
+
+	this->GetInputListOnVertices(&dist_gl[0],DistanceToGroundinglineEnum);
+	this->GetInputListOnVertices(&dist_cf[0],DistanceToCalvingfrontEnum);
+
+	for(int i=0;i<NUM_VERTICES;i++){
+		dist_ratio = fabs(dist_gl[i]) / (fabs(dist_gl[i])+fabs(dist_cf[i]));
+		if(dist_gl[i]+dist_cf[i] == 0.0){
+			values[i] = 0.0;
+		}
+		else{
+			values[i] = m0 * (1.0 - pow(dist_ratio, alpha)) * pow(dist_ratio, beta-1);
+			values[i] = max(values[i], 0.0);
+		}
+	}
+	this->AddInput(BasalforcingsFloatingiceMeltingRateEnum,&values[0],P1DGEnum);	
+
+	return;
+}
+
 void       Element::LapseRateBasinSMB(int numelevbins, IssmDouble* lapserates, IssmDouble* elevbins,IssmDouble* refelevation){/*{{{*/
 
 	/*Variable declaration*/

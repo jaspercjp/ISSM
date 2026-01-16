@@ -237,18 +237,18 @@ void MasstransportAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoM
 
 				/*Fetch Ocean Temperature for this depth*/
 				iomodel->FetchData(&array2d, &M, &N, kk, "md.basalforcings.ocean_temperature");
-				_printf0_("\tFetchData ocean_temperature\n");
+				// _printf0_("\tFetchData ocean_temperature\n");
 				if(!array2d) _error_("md.basalforcings.ocean_temperature not found in binary file");
 				for(Object* & object : elements->objects){
 					Element*  element = xDynamicCast<Element*>(object);
 					if(!element->IsOnBase()) continue;
 					element->DatasetInputAdd(BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum,array2d,inputs,iomodel,M,N,1,BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum,kk);
 				}
-				_printf0_("\tmasstransport analysis: loaded ISMIP6 Explicit Ocean Temperature\n");
+				// _printf0_("\tmasstransport analysis: loaded ISMIP6 Explicit Ocean Temperature\n");
 
 				/*Fetch Ocean Salinity for this depth*/
 				iomodel->FetchData(&array2d, &M, &N, kk, "md.basalforcings.ocean_salinity");
-				_printf0_("\tFetchData ocean_salinity\n");
+				// _printf0_("\tFetchData ocean_salinity\n");
 				if(!array2d) _error_("md.basalforcings.ocean_salinity not found in binary file");
 				for(Object* & object : elements->objects){
 					Element*  element = xDynamicCast<Element*>(object);
@@ -256,7 +256,7 @@ void MasstransportAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoM
 					element->DatasetInputAdd(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum,array2d,inputs,iomodel,M,N,1,BasalforcingsIsmip6ExplicitOceanSalinityInputEnum,kk);
 					}
 				xDelete<IssmDouble>(array2d);
-				_printf0_("\tmasstransport analysis: loaded ISMIP6 Explicit Ocean Salinity\n");
+				// _printf0_("\tmasstransport analysis: loaded ISMIP6 Explicit Ocean Salinity\n");
 			}
 			_printf0_("masstransport analysis: successfully loaded ISMIP6 Explicit Ocean Temperature and Salinity for all depths\n");
 		}
@@ -276,6 +276,8 @@ void MasstransportAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoM
 		case LinearFloatingMeltRatearmaEnum:
 			iomodel->FetchDataToInput(inputs,elements,"md.basalforcings.basin_id",BasalforcingsLinearBasinIdEnum);
 			if(isstochastic) iomodel->FetchDataToInput(inputs,elements,"md.stochasticforcing.default_id",StochasticForcingDefaultIdEnum);
+			break;
+		case BasalforcingsIdealEnum:
 			break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");

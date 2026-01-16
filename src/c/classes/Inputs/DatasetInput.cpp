@@ -240,6 +240,17 @@ TransientInput* DatasetInput::SetTransientInput(int id,IssmDouble* times,int num
 	return input;
 }
 /*}}}*/
+void DatasetInput::SetTime(IssmDouble time){/*{{{*/
+
+	for(int i=0;i<this->numids;i++){
+		if(this->inputs[i]){
+			if(this->inputs[i]->ObjectEnum()==TransientInputEnum){
+				xDynamicCast<TransientInput*>(this->inputs[i])->SetCurrentTimeInput(time);
+			}
+		}
+	}
+}
+/*}}}*/
 void DatasetInput::Serve(int numindices,int* indices){/*{{{*/
 
 	for(int i=0;i<this->numids;i++){

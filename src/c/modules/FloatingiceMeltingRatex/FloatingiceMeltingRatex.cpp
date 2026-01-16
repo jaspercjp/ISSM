@@ -63,11 +63,47 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 			if(VerboseSolution())_printf0_("        call Linear Floating melting rate ARMA module\n");
 			LinearFloatingiceMeltingRatearmax(femmodel);
 			break;
+		case BasalforcingsIdealEnum:
+			if(VerboseSolution())_printf0_("   call ideal melting rate module\n");
+			FloatingiceMeltingRateIdealx(femmodel);
+			break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");
 	}
 
 }/*}}}*/
+
+void FloatingiceMeltingRateIdealx(FemModel* femmodel) {
+	IssmDouble alpha, beta, gamma, m0; 
+	// TODO: read alpha, beta, gamma, pass into IdealFloatingiceMeltingRate 
+	femmodel->parameters->FindParam(&alpha, BasalforcingsIdealAlphaEnum);
+	femmodel->parameters->FindParam(&beta, BasalforcingsIdealBetaEnum);
+	femmodel->parameters->FindParam(&gamma, BasalforcingsIdealGammaEnum);
+	femmodel->parameters->FindParam(&m0, BasalforcingsIdealM0Enum);
+
+	InputDuplicatex(femmodel,MaskOceanLevelsetEnum,DistanceToGroundinglineEnum);
+	femmodel->DistanceToFieldValue(MaskOceanLevelsetEnum,0.,DistanceToGroundinglineEnum);
+
+	InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
+	femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0.,DistanceToCalvingfrontEnum);
+
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		int      numvertices = element->GetNumberOfVertices();
+		/*Set melt to 0 if non floating*/
+		if(!element->IsIceInElement() || !element->IsAllFloating() || !element->IsOnBase()){
+			IssmDouble* values = xNewZeroInit<IssmDouble>(numvertices);
+			element->AddInput(BasalforcingsFloatingiceMeltingRateEnum,values,P1DGEnum);
+			xDelete<IssmDouble>(values);
+			continue;
+		}
+	}
+
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		element->IdealFloatingiceMeltingRate(alpha,beta,gamma,m0);
+	}
+}
 
 void LinearFloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 
@@ -232,6 +268,7 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 	femmodel->parameters->FindParam(&lambda1,BasalforcingsIsmip6ExplicitLambda1Enum);
 	femmodel->parameters->FindParam(&lambda2,BasalforcingsIsmip6ExplicitLambda2Enum);
 	femmodel->parameters->FindParam(&lambda3,BasalforcingsIsmip6ExplicitLambda3Enum);
+	femmodel->parameters->FindParam(&time,TimeEnum);
 
 	/*Copy to local array to avoid modifying global parameters*/
 	IssmDouble* tf_depths_local = xNew<IssmDouble>(num_depths);
@@ -259,6 +296,100 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 
 	/*Get TF at each ice shelf point - linearly intepolate in depth and time*/
 
+	/*Calculate P1-averaged slopes if requested*/
+	int isslope;
+	femmodel->parameters->FindParam(&isslope,BasalforcingsIsmip6IsSlopeEnum);
+	if(isslope){
+		_printf0_("\tcomputing P1-averaged bed slopes\n");
+		
+		int num_global_nodes = femmodel->nodes->NumberOfNodes();
+		int num_local_nodes  = femmodel->nodes->NumberOfNodesLocal();
+		
+		Vector<IssmDouble>* slope_vec = new Vector<IssmDouble>(num_local_nodes, num_global_nodes);
+		Vector<IssmDouble>* count_vec = new Vector<IssmDouble>(num_local_nodes, num_global_nodes);
+
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			if(!element->IsIceInElement() || !element->IsOnBase()) continue;
+
+			IssmDouble slopes_surface[3], slopes_thickness[3], slopes_base[3];
+			IssmDouble* xyz_list = NULL;
+			element->GetVerticesCoordinates(&xyz_list);
+			
+			Input* base_input      = element->GetInput(BaseEnum);      _assert_(base_input);
+			Input* surface_input   = element->GetInput(SurfaceEnum);   _assert_(surface_input);
+			Input* thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
+
+			int numvertices = element->GetNumberOfVertices();
+			Gauss* gauss = element->NewGauss(); 
+
+			for(int i=0;i<numvertices;i++){
+				gauss->GaussVertex(i);
+				Node* node = element->GetNode(i);
+				if(!node->IsActive()) continue;
+
+				base_input->GetInputDerivativeValue(&slopes_base[0],xyz_list,gauss);
+				// surface_input->GetInputDerivativeValue(&slopes_surface[0],xyz_list,gauss);
+				// thickness_input->GetInputDerivativeValue(&slopes_thickness[0],xyz_list,gauss);
+				
+				// IssmDouble slope_x = slopes_surface[0] - slopes_thickness[0];
+				// IssmDouble slope_y = slopes_surface[1] - slopes_thickness[1];
+				// IssmDouble slope_mag = sinf(atanf(sqrt(slope_x*slope_x + slope_y*slope_y)));
+				IssmDouble slope_mag = sinf(atanf(sqrt(slopes_base[0]*slopes_base[0] + slopes_base[1]*slopes_base[1])));
+
+				slope_vec->SetValue(node->Pid(), slope_mag, ADD_VAL);
+				count_vec->SetValue(node->Pid(), 1.0, ADD_VAL);
+			}
+
+			xDelete<IssmDouble>(xyz_list);
+			delete gauss;
+		}
+
+		slope_vec->Assemble();
+		count_vec->Assemble();
+
+		IssmDouble* averaged_slope = NULL;
+		IssmDouble* local_count = NULL;
+
+		femmodel->GetLocalVectorWithClonesNodes(&averaged_slope, slope_vec);
+		femmodel->GetLocalVectorWithClonesNodes(&local_count, count_vec);
+
+		int localsize = femmodel->nodes->NumberOfNodesLocalAll(); 
+		for(int i=0;i<localsize;i++){
+			if(local_count[i] > 0.0) averaged_slope[i] /= local_count[i];
+		}
+
+		/*Distribute back to elements*/
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			int numvertices = element->GetNumberOfVertices();
+			IssmDouble* element_slopes = xNew<IssmDouble>(numvertices);
+			
+			for(int i=0;i<numvertices;i++){
+				Node* node = element->GetNode(i);
+				element_slopes[i] = averaged_slope[node->Lid()];
+			}
+			element->AddInput(BasalforcingsIsmip6ExplicitSlopeEnum, element_slopes, P1Enum);
+			
+			xDelete<IssmDouble>(element_slopes);
+		}
+
+		delete slope_vec;
+		delete count_vec;
+		xDelete<IssmDouble>(averaged_slope);
+		xDelete<IssmDouble>(local_count);
+	}
+	else{
+		/*Initialize to 0 if no slope calc*/
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			int numvertices = element->GetNumberOfVertices();
+			IssmDouble* zeros = xNewZeroInit<IssmDouble>(numvertices);
+			element->AddInput(BasalforcingsIsmip6ExplicitSlopeEnum,zeros,P1Enum);
+			xDelete<IssmDouble>(zeros);
+		}
+	}
+
 	_printf0_("\tcomputing thermal forcing at each element\n");
 	for(Object* & object : femmodel->elements->objects){
       Element* element = xDynamicCast<Element*>(object);
@@ -278,6 +409,10 @@ void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
 		IssmDouble*    depth_vertices = xNew<IssmDouble>(numvertices);
 		DatasetInput* temp_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum); _assert_(temp_input);
 		DatasetInput* sal_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum); _assert_(sal_input);
+		
+		/*If time dependent, update inputs to current time*/
+		temp_input->SetTime(time);
+		sal_input->SetTime(time);
 		
 		/*We must serve the DatasetInput manually as it is not part of the standard element inputs served in Element::Serve*/
 		int* vertexlids = xNew<int>(numvertices);
