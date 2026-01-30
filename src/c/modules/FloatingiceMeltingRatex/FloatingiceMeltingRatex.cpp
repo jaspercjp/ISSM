@@ -74,12 +74,12 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 }/*}}}*/
 
 void FloatingiceMeltingRateIdealx(FemModel* femmodel) {
-	IssmDouble alpha, beta, gamma, m0; 
-	// TODO: read alpha, beta, gamma, pass into IdealFloatingiceMeltingRate 
+	IssmDouble alpha, beta, gamma, m0, width; 
 	femmodel->parameters->FindParam(&alpha, BasalforcingsIdealAlphaEnum);
 	femmodel->parameters->FindParam(&beta, BasalforcingsIdealBetaEnum);
 	femmodel->parameters->FindParam(&gamma, BasalforcingsIdealGammaEnum);
 	femmodel->parameters->FindParam(&m0, BasalforcingsIdealM0Enum);
+	femmodel->parameters->FindParam(&width, BasalforcingsIdealWidthEnum);
 
 	InputDuplicatex(femmodel,MaskOceanLevelsetEnum,DistanceToGroundinglineEnum);
 	femmodel->DistanceToFieldValue(MaskOceanLevelsetEnum,0.,DistanceToGroundinglineEnum);
@@ -101,7 +101,7 @@ void FloatingiceMeltingRateIdealx(FemModel* femmodel) {
 
 	for(Object* & object : femmodel->elements->objects){
       Element* element = xDynamicCast<Element*>(object);
-		element->IdealFloatingiceMeltingRate(alpha,beta,gamma,m0);
+		element->IdealFloatingiceMeltingRate(alpha,beta,gamma,m0,width);
 	}
 }
 

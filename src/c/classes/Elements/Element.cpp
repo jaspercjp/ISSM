@@ -2635,7 +2635,7 @@ void       Element::Ismip6ExplicitFloatingiceMeltingRate(){/*{{{*/
 	xDelete<IssmDouble>(depths);
 
 }/*}}}*/
-void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta, IssmDouble gamma, IssmDouble m0) {
+void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta, IssmDouble gamma, IssmDouble m0, IssmDouble width) {
 
 	const int NUM_VERTICES = this->GetNumberOfVertices();
 	IssmDouble values[MAXVERTICES];
@@ -2644,20 +2644,26 @@ void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta,
 	IssmDouble dist_gl[MAXVERTICES];
 	IssmDouble dist_cf[MAXVERTICES];
 	IssmDouble dist_ratio;
+	IssmDouble half_width = width / 2;
 
 	this->GetInputListOnVertices(&dist_gl[0],DistanceToGroundinglineEnum);
 	this->GetInputListOnVertices(&dist_cf[0],DistanceToCalvingfrontEnum);
 
+	IssmDouble* xyz_list = NULL;
+	this->GetVerticesCoordinates(&xyz_list);
+
 	for(int i=0;i<NUM_VERTICES;i++){
+		IssmDouble y = xyz_list[i*3+1];
 		dist_ratio = fabs(dist_gl[i]) / (fabs(dist_gl[i])+fabs(dist_cf[i]));
 		if(dist_gl[i]+dist_cf[i] == 0.0){
 			values[i] = 0.0;
 		}
 		else{
-			values[i] = m0 * (1.0 - pow(dist_ratio, alpha)) * pow(dist_ratio, beta-1);
+			values[i] = m0 * (1.0 - pow(dist_ratio, alpha)) * pow(dist_ratio, beta-1) * pow(1.0 + (y + half_width) / width, gamma);
 			values[i] = max(values[i], 0.0);
 		}
 	}
+	xDelete<IssmDouble>(xyz_list);
 	this->AddInput(BasalforcingsFloatingiceMeltingRateEnum,&values[0],P1DGEnum);	
 
 	return;

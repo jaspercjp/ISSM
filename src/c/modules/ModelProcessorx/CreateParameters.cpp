@@ -330,6 +330,7 @@ void CreateParameters(Parameters* parameters,IoModel* iomodel,char* rootpath,FIL
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.beta",BasalforcingsIdealBetaEnum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.gamma",BasalforcingsIdealGammaEnum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.m0",BasalforcingsIdealM0Enum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.width",BasalforcingsIdealWidthEnum));
 			
 			break;
 		default:

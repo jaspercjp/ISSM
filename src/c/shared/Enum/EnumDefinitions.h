@@ -84,6 +84,7 @@ enum definitions{
 	BasalforcingsIdealBetaEnum,
 	BasalforcingsIdealGammaEnum,
 	BasalforcingsIdealM0Enum,
+	BasalforcingsIdealWidthEnum,
 	BasalforcingsIsmip6ExplicitOceanTemperatureEnum,
 	BasalforcingsIsmip6ExplicitOceanSalinityEnum,
 	BasalforcingsIsmip6ExplicitLambda1Enum,

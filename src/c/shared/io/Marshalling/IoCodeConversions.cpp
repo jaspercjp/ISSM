@@ -262,6 +262,11 @@ void FieldAndEnumFromCode(int* out_enum,char** pfield,const char* string_in){/*{
 		input_enum        = BasalforcingsIdealM0Enum;
 		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
 	}
+	else if(strcmp(string_in,"BasalforcingsWidth")==0 || strcmp(string_in,"md.basalforcings.width")==0){
+		const char* field = "md.basalforcings.width";
+		input_enum        = BasalforcingsIdealWidthEnum;
+		fieldname=xNew<char>((strlen(field)+1)); xMemCpy<char>(fieldname,field,(strlen(field)+1));
+	}
 	else{
 		_error_("Field \""<<string_in<<"\" not supported yet");
 	}

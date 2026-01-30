@@ -9,6 +9,7 @@ classdef basalforcingsideal
 		beta  = NaN;
 		gamma = NaN;
 		m0    = NaN;
+		width = NaN;
 		groundedice_melting_rate = NaN;
 		geothermalflux = NaN;
 	end
@@ -30,6 +31,7 @@ classdef basalforcingsideal
 			fielddisplay(self,'beta','exponent controlling the spread of melt over the ice shelf. higher beta is more evenly spread');
 			fielddisplay(self,'gamma','exponent controlling the spread of melt across the width. higher gamma is more concentrated towards the north.');
 			fielddisplay(self,'m0','constant that scales the melt');
+			fielddisplay(self,'width','width of the ice shelf');
 			fielddisplay(self,'groundedice_melting_rate','melt rate applied on grounded ice');
 			fielddisplay(self,'geothermalflux','melt rate applied on grounded ice');
 
@@ -39,6 +41,10 @@ classdef basalforcingsideal
 			self.geothermalflux=project3d(md,'vector',self.geothermalflux,'type','element','layer',1); %bedrock only gets geothermal flux
 		end % }}}
 		function self = initialize(self,md) % {{{
+
+			if isnan(self.width),
+				self.width = max(md.mesh.y)-min(md.mesh.y);
+			end
 
 		end % }}}
 		function self = setdefaultparameters(self) % {{{
@@ -52,6 +58,7 @@ classdef basalforcingsideal
 			md = checkfield(md,'fieldname','basalforcings.beta','NaN',1,'Inf',1,'>=', 1.0);
 			md = checkfield(md,'fieldname','basalforcings.gamma','NaN',1,'Inf',1,'>=', 0.0);
 			md = checkfield(md,'fieldname','basalforcings.m0','NaN',1,'Inf',1,'>=', 0.0);
+			md = checkfield(md,'fieldname','basalforcings.width','NaN',1,'Inf',1,'>=', 0.0);
 			md = checkfield(md,'fieldname','basalforcings.groundedice_melting_rate','NaN',1,'Inf',1,'timeseries',1);
 			md = checkfield(md,'fieldname','basalforcings.geothermalflux','NaN',1,'Inf',1,'timeseries',1);
 		end % }}}
@@ -61,6 +68,7 @@ classdef basalforcingsideal
 			WriteData(fid,prefix,'object',self,'fieldname','beta','format','Double');
 			WriteData(fid,prefix,'object',self,'fieldname','gamma','format','Double');
 			WriteData(fid,prefix,'object',self,'fieldname','m0','format','Double','scale',1./md.constants.yts);
+			WriteData(fid,prefix,'object',self,'fieldname','width','format','Double');
 			WriteData(fid,prefix,'object',self,'fieldname','groundedice_melting_rate','format','DoubleMat','mattype',1,'scale',1./md.constants.yts,'timeserieslength',md.mesh.numberofvertices+1);
 			WriteData(fid,prefix,'object',self,'fieldname','geothermalflux','format','DoubleMat','name','md.basalforcings.geothermalflux','mattype',1,'timeserieslength',md.mesh.numberofelements+1,'yts',md.constants.yts);
 		end % }}}
@@ -70,6 +78,7 @@ classdef basalforcingsideal
 			writejs1Darray(fid,[modelname '.basalforcings.beta'],self.beta);
 			writejs1Darray(fid,[modelname '.basalforcings.gamma'],self.gamma);
 			writejs1Darray(fid,[modelname '.basalforcings.m0'],self.m0);
+			writejs1Darray(fid,[modelname '.basalforcings.width'],self.width);
 			writejs1Darray(fid,[modelname '.basalforcings.groundedice_melting_rate'],self.groundedice_melting_rate);
 			writejs1Darray(fid,[modelname '.basalforcings.geothermalflux'],self.geothermalflux);
 
