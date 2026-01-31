@@ -4199,7 +4199,7 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	int analysis_index = AnalysisIndex(analysis_enum);
 
 	int numberofnodes_analysistype= this->nodes_list[analysis_index]->NumberOfNodes();
-	int dofpernode						= 2;														//vx and vy
+	int dofpernode						= 3;														//vx, vy and vz
 	int numberofcols					= dofpernode*2;										//to keep dofs and flags in the vspc vector
 	int numberofvertices				= -1;														//global, entire old mesh
 	int numberofelements				= -1;														//global, entire old mesh
@@ -4221,6 +4221,8 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	/*Get vertices coordinates of the new partition*/
 	newx=xNew<IssmDouble>(newnumberofvertices);//just the new partition
 	newy=xNew<IssmDouble>(newnumberofvertices);//just the new partition
+	IssmDouble ymin = -40000;
+	IssmDouble ymax = +40000;
 	for(int i=0;i<newnumberofvertices;i++){//just the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*Attention: no spherical coordinates*/
@@ -4247,6 +4249,11 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 			vspc->SetValue(nodeindex*numberofcols+1,spcvalue,INS_VAL);	//vy
 			vspc->SetValue(nodeindex*numberofcols+dofpernode+1,1,INS_VAL);//vyflag
 		}
+		/*vz and vz flag insertion*/
+		if(dof==2){//vz
+			vspc->SetValue(nodeindex*numberofcols+2,spcvalue,INS_VAL);	//vz
+			vspc->SetValue(nodeindex*numberofcols+dofpernode+2,1,INS_VAL);//vzflag
+		}
 	}
 
 	/*Assemble and serialize*/
@@ -4263,22 +4270,39 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	for(int i=0;i<newnumberofvertices;i++){//just in the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*spcvx*/
-		if(!xIsNan<IssmDouble>(newspc[i*numberofcols]) && newspc[i*numberofcols+dofpernode]>(1-eps)){
+		if((fabs(vertex->GetY()-ymin)<0.1) || (fabs(vertex->GetY()-ymax)<0.1) || (fabs(vertex->GetX())<0.1)){
+			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,0,0.,analysis_enum));
+			count++;
+		}
+		else if(!xIsNan<IssmDouble>(newspc[i*numberofcols]) && newspc[i*numberofcols+dofpernode]>(1-eps)){
 			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,0,newspc[i*numberofcols],analysis_enum));
 			//add count'th spc, on node i+1, setting dof 1 to vx.
 			count++;
 		}
 	}
-	count=0;
+	
 	for(int i=0;i<newnumberofvertices;i++){//just in the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*spcvy*/
-		if(!xIsNan<IssmDouble>(newspc[i*numberofcols+1]) && newspc[i*numberofcols+dofpernode+1]>(1-eps) ){
+		if((fabs(vertex->GetY()-ymin)<0.1) || (fabs(vertex->GetY()-ymax)<0.1) || (fabs(vertex->GetX())<0.1)){
+			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,1,0.,analysis_enum));
+			count++;
+		}
+		else if(!xIsNan<IssmDouble>(newspc[i*numberofcols+1]) && newspc[i*numberofcols+dofpernode+1]>(1-eps)){
 			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,1,newspc[i*numberofcols+1],analysis_enum));
 			//add count'th spc, on node i+1, setting dof 1 to vx.
 			count++;
 		}
 	}
+	// count=0;
+	// for(int i=0;i<newnumberofvertices;i++){//just in the new partition
+	// 	Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
+	// 	/*spcvz*/
+	// 	if((fabs(vertex->GetX())<0.1)){
+	// 		newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,2,0.,analysis_enum));
+	// 		count++;
+	// 	}
+	// }
 
 	/*Cleanup*/
 	xDelete<IssmDouble>(spc);
@@ -5731,6 +5755,13 @@ void FemModel::GethmaxVerticesFromEstimators(IssmDouble* hmaxvertices,int errore
 
 	/*Fill hmaxvertices with the criteria*/
 	for(int i=0;i<numberofelements;i++){
+
+		/*Skip if x < 50 km*/
+		v1=index[i*elementswidth+0]-1;
+		v2=index[i*elementswidth+1]-1;
+		v3=index[i*elementswidth+2]-1;
+		if((x[v1]+x[v2]+x[v3])/3. < 50000.) continue;
+
 		/*Refine any element if its error > phi*maxerror*/
 		if(error_elements[i]>threshold*maxerror){
 			/*Now, fill the hmaxvertices if requested*/
