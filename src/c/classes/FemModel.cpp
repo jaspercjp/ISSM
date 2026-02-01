@@ -5760,7 +5760,7 @@ void FemModel::GethmaxVerticesFromEstimators(IssmDouble* hmaxvertices,int errore
 		v1=index[i*elementswidth+0]-1;
 		v2=index[i*elementswidth+1]-1;
 		v3=index[i*elementswidth+2]-1;
-		if((x[v1]+x[v2]+x[v3])/3. < 10000.) continue;
+		if((x[v1]+x[v2]+x[v3])/3. < 25000.) continue;
 
 		/*Refine any element if its error > phi*maxerror*/
 		if(error_elements[i]>threshold*maxerror){
