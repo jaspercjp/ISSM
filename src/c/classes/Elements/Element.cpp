@@ -2645,12 +2645,19 @@ void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta,
 	IssmDouble dist_cf[MAXVERTICES];
 	IssmDouble dist_ratio;
 	IssmDouble half_width = width / 2;
+	IssmDouble N;
 
 	this->GetInputListOnVertices(&dist_gl[0],DistanceToGroundinglineEnum);
 	this->GetInputListOnVertices(&dist_cf[0],DistanceToCalvingfrontEnum);
 
 	IssmDouble* xyz_list = NULL;
 	this->GetVerticesCoordinates(&xyz_list);
+
+	// Normalizing constant for the melt rate 
+	N = 1/beta - 1/(alpha+beta);
+	if (gamma >= 1e-3) {
+		N = N * (pow(2, gamma+1) - 1) / (gamma+1);
+	}
 
 	for(int i=0;i<NUM_VERTICES;i++){
 		IssmDouble y = xyz_list[i*3+1];
@@ -2659,7 +2666,7 @@ void 	   Element::IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta,
 			values[i] = 0.0;
 		}
 		else{
-			values[i] = m0 * (1.0 - pow(dist_ratio, alpha)) * pow(dist_ratio, beta-1) * pow(1.0 + (y + half_width) / width, gamma);
+			values[i] = (m0/N) * (1.0 - pow(dist_ratio, alpha)) * pow(dist_ratio, beta-1) * pow(1.0 + (y + half_width) / width, gamma);
 			values[i] = max(values[i], 0.0);
 		}
 	}
