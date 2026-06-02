@@ -12,5 +12,7 @@
         "locale": "cpp",
         "variant": "cpp",
         "__node_handle": "cpp"
-    }
+    },
+    "editor.fontFamily": "\"jetbrains mono\"",
+    "editor.fontLigatures": true
 }

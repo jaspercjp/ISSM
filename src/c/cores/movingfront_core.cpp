@@ -15,7 +15,8 @@ void movingfront_core(FemModel* femmodel){
 	femmodel->profiler->Start(MOVINGFRONTCORE);
 
 	/* intermediaries */
-	bool save_results,isstressbalance,ismasstransport,isthermal,isenthalpy,islevelset,ismovingfront,killicebergs;
+		bool save_results,isstressbalance,ismasstransport,isthermal,isenthalpy,islevelset,ismovingfront,killicebergs;
+		bool calving_occurred,reinitialized_after_calving;
 	int  domaintype, reinit_frequency,step;
 	Analysis  *analysis=NULL;
 	IssmDouble maxVel;
@@ -98,10 +99,24 @@ void movingfront_core(FemModel* femmodel){
 	/* Calculate the frontal velocity for levelset function */
 	MovingFrontalVelx(femmodel);
 
-	/* solve level set equation */
-	LevelsetAnalysis lsanalysis;
-	lsanalysis.Core(femmodel);
-	lsanalysis.PostProcess(femmodel);
+		/* solve level set equation */
+		LevelsetAnalysis lsanalysis;
+		lsanalysis.Core(femmodel);
+		lsanalysis.PostProcess(femmodel);
+
+		calving_occurred = false;
+		reinitialized_after_calving = false;
+		if(femmodel->parameters->Exist(CalvingOccurredEnum)){
+			IssmDouble calving_flag = 0.0;
+			femmodel->parameters->FindParam(&calving_flag, CalvingOccurredEnum);
+			calving_occurred = (calving_flag > 0.5);
+		}
+		if(calving_occurred){
+			if(VerboseSolution()) _printf0_("   reinitializing level set after calving\n");
+			femmodel->ResetLevelset();
+			ResetBoundaryConditions(femmodel,LevelsetAnalysisEnum);
+			reinitialized_after_calving = true;
+		}
 
 	/*Kill ice berg to avoid free body motion*/
 	if(killicebergs){
@@ -121,11 +136,11 @@ void movingfront_core(FemModel* femmodel){
 	}
 
 	/*Reset levelset if needed*/
-	if(reinit_frequency && (step%reinit_frequency==0)){
-		if(VerboseSolution()) _printf0_("   reinitializing level set\n");
-		femmodel->ResetLevelset();
-		ResetBoundaryConditions(femmodel,LevelsetAnalysisEnum);
-	}
+		if(reinit_frequency && (step%reinit_frequency==0) && !reinitialized_after_calving){
+			if(VerboseSolution()) _printf0_("   reinitializing level set\n");
+			femmodel->ResetLevelset();
+			ResetBoundaryConditions(femmodel,LevelsetAnalysisEnum);
+		}
 
 	/* update vertices included for next calculation */
 	GetMaskOfIceVerticesLSMx(femmodel);

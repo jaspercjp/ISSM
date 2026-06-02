@@ -109,6 +109,14 @@
 	CalvingADStressThresholdGroundediceEnum
 	CalvingCrevasseDepthEnum
 	CalvingCrevasseThresholdEnum
+	CalvingCriticalStressEnum
+	CalvingMinIcebergSizeEnum
+	CalvingAdvectIcefrontEnum
+	CalvingPropagateFromFrontEnum
+	CalvingRemoveOnlyMarkedEnum
+	CalvingHydrofractureStabilizationEnum
+	CalvingHydrofractureWeakeningFactorEnum
+	CalvingHydrofractureMinOceanLevelsetEnum
 	CalvingHeightAboveFloatationEnum
 	CalvingLawEnum
 	CalvingMinthicknessEnum
@@ -724,6 +732,7 @@
 	ZzeEnum
 	AreaeEnum
 	WorldCommEnum
+	FrictionGroundinglineCoulombDistanceEnum
 	ParametersENDEnum
 	InputsSTARTEnum
 	AccumulatedDeltaBottomPressureEnum
@@ -803,6 +812,7 @@
 	CalvingHabFractionEnum
 	CalvingAblationrateEnum
 	CalvingMeltingrateEnum
+	CalvingMeltwaterMaskEnum
 	CalvingStressThresholdFloatingiceEnum
 	CalvingStressThresholdGroundediceEnum
 	CalvinglevermannCoeffEnum
@@ -812,6 +822,8 @@
 	CalvingMeltingFluxLevelsetEnum
 	ConvergedEnum
 	CrevasseDepthEnum
+	HydrofracturePredictedEnum
+	HydrofractureWeakIceEnum
 	DamageDEnum
 	DamageDOldEnum
 	DamageDbarEnum
@@ -3857,6 +3869,14 @@ function EnumToString(enum::IssmEnum)
 	if(enum==CalvingADStressThresholdGroundediceEnum) return "CalvingADStressThresholdGroundedice" end
 	if(enum==CalvingCrevasseDepthEnum) return "CalvingCrevasseDepth" end
 	if(enum==CalvingCrevasseThresholdEnum) return "CalvingCrevasseThreshold" end
+	if(enum==CalvingCriticalStressEnum) return "CalvingCriticalStress" end
+	if(enum==CalvingMinIcebergSizeEnum) return "CalvingMinIcebergSize" end
+	if(enum==CalvingAdvectIcefrontEnum) return "CalvingAdvectIcefront" end
+	if(enum==CalvingPropagateFromFrontEnum) return "CalvingPropagateFromFront" end
+	if(enum==CalvingRemoveOnlyMarkedEnum) return "CalvingRemoveOnlyMarked" end
+	if(enum==CalvingHydrofractureStabilizationEnum) return "CalvingHydrofractureStabilization" end
+	if(enum==CalvingHydrofractureWeakeningFactorEnum) return "CalvingHydrofractureWeakeningFactor" end
+	if(enum==CalvingHydrofractureMinOceanLevelsetEnum) return "CalvingHydrofractureMinOceanLevelset" end
 	if(enum==CalvingHeightAboveFloatationEnum) return "CalvingHeightAboveFloatation" end
 	if(enum==CalvingLawEnum) return "CalvingLaw" end
 	if(enum==CalvingMinthicknessEnum) return "CalvingMinthickness" end
@@ -4551,6 +4571,7 @@ function EnumToString(enum::IssmEnum)
 	if(enum==CalvingHabFractionEnum) return "CalvingHabFraction" end
 	if(enum==CalvingAblationrateEnum) return "CalvingAblationrate" end
 	if(enum==CalvingMeltingrateEnum) return "CalvingMeltingrate" end
+	if(enum==CalvingMeltwaterMaskEnum) return "CalvingMeltwaterMask" end
 	if(enum==CalvingStressThresholdFloatingiceEnum) return "CalvingStressThresholdFloatingice" end
 	if(enum==CalvingStressThresholdGroundediceEnum) return "CalvingStressThresholdGroundedice" end
 	if(enum==CalvinglevermannCoeffEnum) return "CalvinglevermannCoeff" end
@@ -4560,6 +4581,8 @@ function EnumToString(enum::IssmEnum)
 	if(enum==CalvingMeltingFluxLevelsetEnum) return "CalvingMeltingFluxLevelset" end
 	if(enum==ConvergedEnum) return "Converged" end
 	if(enum==CrevasseDepthEnum) return "CrevasseDepth" end
+	if(enum==HydrofracturePredictedEnum) return "HydrofracturePredicted" end
+	if(enum==HydrofractureWeakIceEnum) return "HydrofractureWeakIce" end
 	if(enum==DamageDEnum) return "DamageD" end
 	if(enum==DamageDOldEnum) return "DamageDOld" end
 	if(enum==DamageDbarEnum) return "DamageDbar" end
@@ -7495,6 +7518,7 @@ function EnumToString(enum::IssmEnum)
 	if(enum==SubelementMigration4Enum) return "SubelementMigration4" end
 	if(enum==TimesteppingTimeAdaptEnum) return "TimesteppingTimeAdapt" end
 	if(enum==TriangleInterpEnum) return "TriangleInterp" end
+	if(enum==FrictionGroundinglineCoulombDistanceEnum) return "FrictionGroundinglineCoulombDistance" end
 	if(enum==MaximumNumberOfDefinitionsEnum) return "MaximumNumberOfDefinitions" end
 end
 
@@ -7605,6 +7629,14 @@ function StringToEnum(name::String)
 	if(name=="CalvingADStressThresholdGroundedice") return CalvingADStressThresholdGroundediceEnum  end
 	if(name=="CalvingCrevasseDepth") return CalvingCrevasseDepthEnum  end
 	if(name=="CalvingCrevasseThreshold") return CalvingCrevasseThresholdEnum  end
+	if(name=="CalvingCriticalStress") return CalvingCriticalStressEnum  end
+	if(name=="CalvingMinIcebergSize") return CalvingMinIcebergSizeEnum  end
+	if(name=="CalvingAdvectIcefront") return CalvingAdvectIcefrontEnum  end
+	if(name=="CalvingPropagateFromFront") return CalvingPropagateFromFrontEnum  end
+	if(name=="CalvingRemoveOnlyMarked") return CalvingRemoveOnlyMarkedEnum  end
+	if(name=="CalvingHydrofractureStabilization") return CalvingHydrofractureStabilizationEnum  end
+	if(name=="CalvingHydrofractureWeakeningFactor") return CalvingHydrofractureWeakeningFactorEnum  end
+	if(name=="CalvingHydrofractureMinOceanLevelset") return CalvingHydrofractureMinOceanLevelsetEnum  end
 	if(name=="CalvingHeightAboveFloatation") return CalvingHeightAboveFloatationEnum  end
 	if(name=="CalvingLaw") return CalvingLawEnum  end
 	if(name=="CalvingMinthickness") return CalvingMinthicknessEnum  end
@@ -8299,6 +8331,7 @@ function StringToEnum(name::String)
 	if(name=="CalvingHabFraction") return CalvingHabFractionEnum  end
 	if(name=="CalvingAblationrate") return CalvingAblationrateEnum  end
 	if(name=="CalvingMeltingrate") return CalvingMeltingrateEnum  end
+	if(name=="CalvingMeltwaterMask") return CalvingMeltwaterMaskEnum  end
 	if(name=="CalvingStressThresholdFloatingice") return CalvingStressThresholdFloatingiceEnum  end
 	if(name=="CalvingStressThresholdGroundedice") return CalvingStressThresholdGroundediceEnum  end
 	if(name=="CalvinglevermannCoeff") return CalvinglevermannCoeffEnum  end
@@ -8308,6 +8341,8 @@ function StringToEnum(name::String)
 	if(name=="CalvingMeltingFluxLevelset") return CalvingMeltingFluxLevelsetEnum  end
 	if(name=="Converged") return ConvergedEnum  end
 	if(name=="CrevasseDepth") return CrevasseDepthEnum  end
+	if(name=="HydrofracturePredicted") return HydrofracturePredictedEnum  end
+	if(name=="HydrofractureWeakIce") return HydrofractureWeakIceEnum  end
 	if(name=="DamageD") return DamageDEnum  end
 	if(name=="DamageDOld") return DamageDOldEnum  end
 	if(name=="DamageDbar") return DamageDbarEnum  end
@@ -11243,6 +11278,7 @@ function StringToEnum(name::String)
 	if(name=="SubelementMigration4") return SubelementMigration4Enum  end
 	if(name=="TimesteppingTimeAdapt") return TimesteppingTimeAdaptEnum  end
 	if(name=="TriangleInterp") return TriangleInterpEnum  end
+	if(name=="FrictionGroundinglineCoulombDistance") return FrictionGroundinglineCoulombDistanceEnum  end
 	if(name=="MaximumNumberOfDefinitions") return MaximumNumberOfDefinitionsEnum  end
 	error("Enum ", name, " not found");
 end

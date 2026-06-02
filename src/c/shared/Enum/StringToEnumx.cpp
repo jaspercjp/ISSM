@@ -131,8 +131,14 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"CalvingADStressThresholdGroundedice")==0) return CalvingADStressThresholdGroundediceEnum;
 	      else if (strcmp(name,"CalvingCrevasseDepth")==0) return CalvingCrevasseDepthEnum;
 	      else if (strcmp(name,"CalvingCrevasseThreshold")==0) return CalvingCrevasseThresholdEnum;
+	      else if (strcmp(name,"CalvingCriticalStress")==0) return CalvingCriticalStressEnum;
 	      else if (strcmp(name,"CalvingMinIcebergSize")==0) return CalvingMinIcebergSizeEnum;
 	      else if (strcmp(name,"CalvingAdvectIcefront")==0) return CalvingAdvectIcefrontEnum;
+	      else if (strcmp(name,"CalvingPropagateFromFront")==0) return CalvingPropagateFromFrontEnum;
+	      else if (strcmp(name,"CalvingRemoveOnlyMarked")==0) return CalvingRemoveOnlyMarkedEnum;
+	      else if (strcmp(name,"CalvingHydrofractureStabilization")==0) return CalvingHydrofractureStabilizationEnum;
+	      else if (strcmp(name,"CalvingHydrofractureWeakeningFactor")==0) return CalvingHydrofractureWeakeningFactorEnum;
+	      else if (strcmp(name,"CalvingHydrofractureMinOceanLevelset")==0) return CalvingHydrofractureMinOceanLevelsetEnum;
 	      else if (strcmp(name,"CalvingHeightAboveFloatation")==0) return CalvingHeightAboveFloatationEnum;
 	      else if (strcmp(name,"CalvingLaw")==0) return CalvingLawEnum;
 	      else if (strcmp(name,"CalvingMinthickness")==0) return CalvingMinthicknessEnum;
@@ -847,6 +853,7 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"CalvingHabFraction")==0) return CalvingHabFractionEnum;
 	      else if (strcmp(name,"CalvingAblationrate")==0) return CalvingAblationrateEnum;
 	      else if (strcmp(name,"CalvingMeltingrate")==0) return CalvingMeltingrateEnum;
+	      else if (strcmp(name,"CalvingMeltwaterMask")==0) return CalvingMeltwaterMaskEnum;
 	      else if (strcmp(name,"CalvingStressThresholdFloatingice")==0) return CalvingStressThresholdFloatingiceEnum;
 	      else if (strcmp(name,"CalvingStressThresholdGroundedice")==0) return CalvingStressThresholdGroundediceEnum;
 	      else if (strcmp(name,"CalvinglevermannCoeff")==0) return CalvinglevermannCoeffEnum;
@@ -856,6 +863,8 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"CalvingMeltingFluxLevelset")==0) return CalvingMeltingFluxLevelsetEnum;
 	      else if (strcmp(name,"Converged")==0) return ConvergedEnum;
 	      else if (strcmp(name,"CrevasseDepth")==0) return CrevasseDepthEnum;
+	      else if (strcmp(name,"HydrofracturePredicted")==0) return HydrofracturePredictedEnum;
+	      else if (strcmp(name,"HydrofractureWeakIce")==0) return HydrofractureWeakIceEnum;
 	      else if (strcmp(name,"DamageD")==0) return DamageDEnum;
 	      else if (strcmp(name,"DamageDOld")==0) return DamageDOldEnum;
 	      else if (strcmp(name,"DamageDbar")==0) return DamageDbarEnum;
@@ -3869,6 +3878,7 @@ int  StringToEnumx(const char* name,bool notfounderror){
 	      else if (strcmp(name,"SubelementMigration4")==0) return SubelementMigration4Enum;
 	      else if (strcmp(name,"TimesteppingTimeAdapt")==0) return TimesteppingTimeAdaptEnum;
 	      else if (strcmp(name,"TriangleInterp")==0) return TriangleInterpEnum;
+	      else if (strcmp(name,"FrictionGroundinglineCoulombDistance")==0) return FrictionGroundinglineCoulombDistanceEnum;
 	      else if (strcmp(name,"MaximumNumberOfDefinitions")==0) return MaximumNumberOfDefinitionsEnum;
          else stage=33;
    }

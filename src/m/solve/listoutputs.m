@@ -94,6 +94,8 @@ Calvingratex
 Calvingratey
 CalvingFluxLevelset
 CalvingMeltingFluxLevelset
+HydrofracturePredicted
+HydrofractureWeakIce
 Converged
 CrevasseDepth
 DamageD

@@ -606,36 +606,9 @@ void       Tria::CalvingCrevasseDepth(){/*{{{*/
 			// }
 		}
 		else if (crevasse_opening_stress==5) {
-			/* the general case, using velocity vectors to calculate longitudinal direction */
-			IssmDouble vel = sqrt(vx*vx + vy*vy);
-
-			if (vel < 1e-10) {
-				// Handle nearly zero velocity case - use default approach
-				// Numerically stable form: K = (R_IT - R) / R_IT
-				IssmDouble R = 2.0*(2.0*s_xx + s_yy);
-				IssmDouble R_IT = rho_ice*constant_g*(rho_seawater-rho_ice)/rho_seawater*thickness;
-				K = (R_IT - R) / R_IT;
-			} else {
-				// Unit velocity vector (longitudinal direction)
-				IssmDouble nx = vx/vel;
-				IssmDouble ny = vy/vel;
-
-				// Transform stresses to velocity-aligned coordinate system
-				// s_lon = longitudinal stress (along velocity)
-				// s_lat = latitudinal stress (perpendicular to velocity)
-				IssmDouble s_lon = nx*nx*s_xx + 2.0*nx*ny*s_xy + ny*ny*s_yy;
-				IssmDouble s_lat = ny*ny*s_xx - 2.0*nx*ny*s_xy + nx*nx*s_yy;
-
-				// Resistive stress
-				IssmDouble R = 2.0*s_lon + s_lat;
-
-				// Ice overburden pressure term
-				IssmDouble R_IT = rho_ice*constant_g*(1.0-rho_ice/rho_seawater)*thickness/2.0;
-
-				// Calculate buttressing (numerically stable form)
-				K = (R_IT - R) / R_IT;
-
-			}
+			IssmDouble R = 2.0*s_xx + s_yy;
+			IssmDouble R_star = 75000; 
+			K = 1 - R / R_star;
 		}
 		else{
 			_error_("crevasse opening stress option not supported");

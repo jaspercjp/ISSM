@@ -113,6 +113,14 @@ syn keyword juliaConstC CalvingADStressThresholdFloatingiceEnum
 syn keyword juliaConstC CalvingADStressThresholdGroundediceEnum
 syn keyword juliaConstC CalvingCrevasseDepthEnum
 syn keyword juliaConstC CalvingCrevasseThresholdEnum
+syn keyword juliaConstC CalvingCriticalStressEnum
+syn keyword juliaConstC CalvingMinIcebergSizeEnum
+syn keyword juliaConstC CalvingAdvectIcefrontEnum
+syn keyword juliaConstC CalvingPropagateFromFrontEnum
+syn keyword juliaConstC CalvingRemoveOnlyMarkedEnum
+syn keyword juliaConstC CalvingHydrofractureStabilizationEnum
+syn keyword juliaConstC CalvingHydrofractureWeakeningFactorEnum
+syn keyword juliaConstC CalvingHydrofractureMinOceanLevelsetEnum
 syn keyword juliaConstC CalvingHeightAboveFloatationEnum
 syn keyword juliaConstC CalvingLawEnum
 syn keyword juliaConstC CalvingMinthicknessEnum
@@ -807,6 +815,7 @@ syn keyword juliaConstC CalvingCalvingrateEnum
 syn keyword juliaConstC CalvingHabFractionEnum
 syn keyword juliaConstC CalvingAblationrateEnum
 syn keyword juliaConstC CalvingMeltingrateEnum
+syn keyword juliaConstC CalvingMeltwaterMaskEnum
 syn keyword juliaConstC CalvingStressThresholdFloatingiceEnum
 syn keyword juliaConstC CalvingStressThresholdGroundediceEnum
 syn keyword juliaConstC CalvinglevermannCoeffEnum
@@ -816,6 +825,8 @@ syn keyword juliaConstC CalvingFluxLevelsetEnum
 syn keyword juliaConstC CalvingMeltingFluxLevelsetEnum
 syn keyword juliaConstC ConvergedEnum
 syn keyword juliaConstC CrevasseDepthEnum
+syn keyword juliaConstC HydrofracturePredictedEnum
+syn keyword juliaConstC HydrofractureWeakIceEnum
 syn keyword juliaConstC DamageDEnum
 syn keyword juliaConstC DamageDOldEnum
 syn keyword juliaConstC DamageDbarEnum
@@ -3751,5 +3762,6 @@ syn keyword juliaConstC StressbalanceViscosityOvershootEnum
 syn keyword juliaConstC SubelementMigration4Enum
 syn keyword juliaConstC TimesteppingTimeAdaptEnum
 syn keyword juliaConstC TriangleInterpEnum
+syn keyword juliaConstC FrictionGroundinglineCoulombDistanceEnum
 syn keyword juliaConstC MaximumNumberOfDefinitionsEnum
 "ISSM Enums end

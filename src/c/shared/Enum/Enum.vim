@@ -120,6 +120,14 @@ syn keyword cConstant CalvingADStressThresholdFloatingiceEnum
 syn keyword cConstant CalvingADStressThresholdGroundediceEnum
 syn keyword cConstant CalvingCrevasseDepthEnum
 syn keyword cConstant CalvingCrevasseThresholdEnum
+syn keyword cConstant CalvingCriticalStressEnum
+syn keyword cConstant CalvingMinIcebergSizeEnum
+syn keyword cConstant CalvingAdvectIcefrontEnum
+syn keyword cConstant CalvingPropagateFromFrontEnum
+syn keyword cConstant CalvingRemoveOnlyMarkedEnum
+syn keyword cConstant CalvingHydrofractureStabilizationEnum
+syn keyword cConstant CalvingHydrofractureWeakeningFactorEnum
+syn keyword cConstant CalvingHydrofractureMinOceanLevelsetEnum
 syn keyword cConstant CalvingHeightAboveFloatationEnum
 syn keyword cConstant CalvingLawEnum
 syn keyword cConstant CalvingMinthicknessEnum
@@ -814,6 +822,7 @@ syn keyword cConstant CalvingCalvingrateEnum
 syn keyword cConstant CalvingHabFractionEnum
 syn keyword cConstant CalvingAblationrateEnum
 syn keyword cConstant CalvingMeltingrateEnum
+syn keyword cConstant CalvingMeltwaterMaskEnum
 syn keyword cConstant CalvingStressThresholdFloatingiceEnum
 syn keyword cConstant CalvingStressThresholdGroundediceEnum
 syn keyword cConstant CalvinglevermannCoeffEnum
@@ -823,6 +832,8 @@ syn keyword cConstant CalvingFluxLevelsetEnum
 syn keyword cConstant CalvingMeltingFluxLevelsetEnum
 syn keyword cConstant ConvergedEnum
 syn keyword cConstant CrevasseDepthEnum
+syn keyword cConstant HydrofracturePredictedEnum
+syn keyword cConstant HydrofractureWeakIceEnum
 syn keyword cConstant DamageDEnum
 syn keyword cConstant DamageDOldEnum
 syn keyword cConstant DamageDbarEnum
@@ -3758,6 +3769,7 @@ syn keyword cConstant StressbalanceViscosityOvershootEnum
 syn keyword cConstant SubelementMigration4Enum
 syn keyword cConstant TimesteppingTimeAdaptEnum
 syn keyword cConstant TriangleInterpEnum
+syn keyword cConstant FrictionGroundinglineCoulombDistanceEnum
 syn keyword cConstant MaximumNumberOfDefinitionsEnum
 "ISSM Enums end
 

@@ -157,7 +157,7 @@ void CreateParameters(Parameters* parameters,IoModel* iomodel,char* rootpath,FIL
 	/*Basal forcing parameters*/
 	parameters->AddObject(iomodel->CopyConstantObject("md.basalforcings.model",BasalforcingsEnum));
 	iomodel->FindConstant(&basalforcing_model,"md.basalforcings.model");
-	_printf0_("Basal forcing model: " << basalforcing_model << " -- "  << EnumToStringx(basalforcing_model));
+	// _printf0_("Basal forcing model: " << basalforcing_model << " -- "  << EnumToStringx(basalforcing_model));
 	switch(basalforcing_model){
 		case FloatingMeltRateEnum:
 			/*Nothing to add to parameters*/

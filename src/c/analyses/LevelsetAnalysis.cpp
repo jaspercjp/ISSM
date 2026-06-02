@@ -10,7 +10,870 @@
 #include "../solutionsequences/solutionsequences.h"
 #include "../toolkits/toolkits.h"
 #include "./LevelsetAnalysis.h"
+#include <algorithm>
+#include <limits>
 #include <math.h>
+#include <vector>
+
+namespace {
+
+static const IssmDouble kCalvedLevelsetValue = 400.0;
+
+struct CrevasseCalvingConfig {
+  IssmDouble time_yr;
+  IssmDouble dt_yr;
+  IssmDouble timescale_yr;
+  IssmDouble min_iceberg_size;
+  IssmDouble critical_stress;
+  IssmDouble hydrofracture_min_ocean_levelset;
+  bool advect_icefront;
+  bool propagate_from_front;
+  bool remove_only_marked;
+  bool hydrofracture_stabilization;
+  IssmDouble hydrofracture_weakening_factor;
+};
+
+struct CrevasseNodalFields {
+  IssmDouble *averaged_principal_stress_1;
+  IssmDouble *averaged_principal_stress_2;
+  IssmDouble *averaged_thickness;
+  IssmDouble *averaged_groundingline_distance;
+  IssmDouble *floating_nodes;
+  IssmDouble *seed_nodes;
+  IssmDouble *meltwater_mask;
+  IssmDouble *node_x;
+  IssmDouble ice_front_x;
+
+  CrevasseNodalFields()
+      : averaged_principal_stress_1(NULL), averaged_principal_stress_2(NULL),
+        averaged_thickness(NULL), averaged_groundingline_distance(NULL),
+        floating_nodes(NULL), seed_nodes(NULL), meltwater_mask(NULL),
+        node_x(NULL),
+        ice_front_x(std::numeric_limits<IssmDouble>::max()) {}
+};
+
+struct CrevassePropagationResult {
+  IssmDouble *propagated_nodes;
+  IssmDouble *applied_nodes;
+  IssmDouble propagated_min_x;
+  IssmDouble propagated_area;
+  bool has_critical_region;
+
+  CrevassePropagationResult()
+      : propagated_nodes(NULL), applied_nodes(NULL),
+        propagated_min_x(std::numeric_limits<IssmDouble>::max()),
+        propagated_area(0.0), has_critical_region(false) {}
+};
+
+struct CrevasseStressSummary {
+  int count;
+  IssmDouble ratio_sum;
+  IssmDouble ratio_min;
+  IssmDouble ratio_max;
+  IssmDouble threshold_sum;
+  IssmDouble threshold_min;
+  IssmDouble threshold_max;
+
+  CrevasseStressSummary()
+      : count(0), ratio_sum(0.0),
+        ratio_min(std::numeric_limits<IssmDouble>::max()),
+        ratio_max(-std::numeric_limits<IssmDouble>::max()),
+        threshold_sum(0.0),
+        threshold_min(std::numeric_limits<IssmDouble>::max()),
+        threshold_max(-std::numeric_limits<IssmDouble>::max()) {}
+};
+
+struct CrevasseStressDiagnostics {
+  CrevasseStressSummary floating;
+  CrevasseStressSummary seed;
+  CrevasseStressSummary propagated;
+};
+
+IssmDouble ComputeLEFMRxx(IssmDouble averaged_stress_1,
+                          IssmDouble averaged_stress_2);
+
+/* Return true when the node already has a user-prescribed level-set SPC. */
+bool HasStaticLevelsetSpc(Element *element, int node_index, Gauss *gauss) {
+  Input *spc_input = element->GetInput(SpcLevelsetEnum);
+  if (!spc_input)
+    return false;
+
+  gauss->GaussVertex(node_index);
+  IssmDouble spc_value;
+  spc_input->GetInputValue(&spc_value, gauss);
+  return !xIsNan<IssmDouble>(spc_value);
+}
+
+/* Count unique master nodes flagged for calving across all MPI ranks. */
+int CountMarkedMasterNodes(FemModel *femmodel, const IssmDouble *marked_nodes) {
+  int local_marked_nodes = 0;
+
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+    if (marked_nodes[node->Lid()] > 0.5)
+      local_marked_nodes++;
+  }
+
+  int global_marked_nodes = 0;
+  ISSM_MPI_Allreduce(&local_marked_nodes, &global_marked_nodes, 1, ISSM_MPI_INT,
+                     ISSM_MPI_SUM, IssmComm::GetComm());
+  return global_marked_nodes;
+}
+
+void UpdateCrevasseStressSummary(CrevasseStressSummary *summary,
+                                 IssmDouble r_xx,
+                                 IssmDouble stress_threshold) {
+  summary->count++;
+  summary->ratio_sum += r_xx;
+  summary->ratio_min = fmin(summary->ratio_min, r_xx);
+  summary->ratio_max = fmax(summary->ratio_max, r_xx);
+  summary->threshold_sum += stress_threshold;
+  summary->threshold_min = fmin(summary->threshold_min, stress_threshold);
+  summary->threshold_max = fmax(summary->threshold_max, stress_threshold);
+}
+
+void ReduceCrevasseStressSummary(CrevasseStressSummary *summary) {
+  int global_count = 0;
+  IssmDouble global_ratio_sum = 0.0;
+  IssmDouble global_ratio_min = summary->ratio_min;
+  IssmDouble global_ratio_max = summary->ratio_max;
+  IssmDouble global_threshold_sum = 0.0;
+  IssmDouble global_threshold_min = summary->threshold_min;
+  IssmDouble global_threshold_max = summary->threshold_max;
+
+  ISSM_MPI_Allreduce(&summary->count, &global_count, 1, ISSM_MPI_INT,
+                     ISSM_MPI_SUM, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->ratio_sum, &global_ratio_sum, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->ratio_min, &global_ratio_min, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->ratio_max, &global_ratio_max, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MAX, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->threshold_sum, &global_threshold_sum, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->threshold_min, &global_threshold_min, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&summary->threshold_max, &global_threshold_max, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MAX, IssmComm::GetComm());
+
+  summary->count = global_count;
+  summary->ratio_sum = global_ratio_sum;
+  summary->ratio_min = global_ratio_min;
+  summary->ratio_max = global_ratio_max;
+  summary->threshold_sum = global_threshold_sum;
+  summary->threshold_min = global_threshold_min;
+  summary->threshold_max = global_threshold_max;
+}
+
+CrevasseStressDiagnostics ComputeCrevasseStressDiagnostics(
+    FemModel *femmodel, const CrevasseNodalFields &fields,
+    const CrevassePropagationResult &propagation) {
+  CrevasseStressDiagnostics diagnostics;
+  IssmDouble critical_stress;
+  femmodel->parameters->FindParam(&critical_stress, CalvingCriticalStressEnum);
+
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+
+    int lid = node->Lid();
+    if (fields.floating_nodes[lid] <= 0.5)
+      continue;
+
+    IssmDouble r_xx = ComputeLEFMRxx(
+        fields.averaged_principal_stress_1[lid],
+        fields.averaged_principal_stress_2[lid]);
+
+    UpdateCrevasseStressSummary(&diagnostics.floating, r_xx,
+                                critical_stress);
+    if (fields.seed_nodes[lid] > 0.5)
+      UpdateCrevasseStressSummary(&diagnostics.seed, r_xx,
+                                  critical_stress);
+    if (propagation.propagated_nodes && propagation.propagated_nodes[lid] > 0.5)
+      UpdateCrevasseStressSummary(&diagnostics.propagated, r_xx,
+                                  critical_stress);
+  }
+
+  ReduceCrevasseStressSummary(&diagnostics.floating);
+  ReduceCrevasseStressSummary(&diagnostics.seed);
+  ReduceCrevasseStressSummary(&diagnostics.propagated);
+  return diagnostics;
+}
+
+void PrintCrevasseStressSummary(const char *label,
+                                const CrevasseStressSummary &summary) {
+  if (summary.count == 0) {
+    _printf0_("\t" << label << " r_xx/critical stress = n/a\n");
+    return;
+  }
+
+  _printf0_("\t" << label << " r_xx[min/mean/max] = " << summary.ratio_min
+            << ", " << summary.ratio_sum / reCast<IssmDouble>(summary.count)
+            << ", " << summary.ratio_max << "\n");
+  _printf0_("\t" << label << " crit.[min/mean/max] = "
+            << summary.threshold_min << ", "
+            << summary.threshold_sum / reCast<IssmDouble>(summary.count)
+            << ", " << summary.threshold_max << "\n");
+}
+
+/* Build a nodal calving mask for the floating region seaward of the inland
+ * calving cutoff. This removes the entire disconnected seaward patch once a
+ * valid calving position has been identified, rather than only the subset of
+ * nodes that happened to be visited during the stress-propagation flood fill. */
+void BuildAppliedCalvingMask(FemModel *femmodel,
+                             const CrevasseNodalFields &fields,
+                             CrevassePropagationResult *result) {
+  int numnodes = femmodel->nodes->NumberOfNodes();
+  int localmasters = femmodel->nodes->NumberOfNodesLocal();
+
+  Vector<IssmDouble> *vec_applied =
+      new Vector<IssmDouble>(localmasters, numnodes);
+
+  if (result->propagated_min_x == std::numeric_limits<IssmDouble>::max()) {
+    vec_applied->Assemble();
+    xDelete<IssmDouble>(result->applied_nodes);
+    femmodel->GetLocalVectorWithClonesNodes(&result->applied_nodes, vec_applied);
+    delete vec_applied;
+    return;
+  }
+
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+    int lid = node->Lid();
+    if (fields.floating_nodes[lid] > 0.5 &&
+        fields.node_x[lid] >= result->propagated_min_x) {
+      vec_applied->SetValue(node->Pid(), 1.0, INS_VAL);
+    }
+  }
+
+  vec_applied->Assemble();
+  xDelete<IssmDouble>(result->applied_nodes);
+  femmodel->GetLocalVectorWithClonesNodes(&result->applied_nodes, vec_applied);
+  delete vec_applied;
+}
+
+/* Remove transient calving SPCs while preserving any static user constraints. */
+void ClearDynamicLevelsetConstraintsPreservingStaticSpc(FemModel *femmodel) {
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes = element->GetNumberOfNodes();
+    Gauss *gauss = element->NewGauss();
+
+    for (int in = 0; in < numnodes; in++) {
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+      if (!HasStaticLevelsetSpc(element, in, gauss))
+        node->DofInFSet(0);
+    }
+    delete gauss;
+  }
+}
+
+/* Freeze the present ice front by constraining front nodes to their current level-set values. */
+void FreezeIceFrontAdvectionIfNeeded(FemModel *femmodel) {
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    if (!element->IsIcefront())
+      continue;
+
+    int numnodes = element->GetNumberOfNodes();
+    Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);
+    _assert_(levelset_input);
+    Gauss *gauss = element->NewGauss();
+
+    for (int in = 0; in < numnodes; in++) {
+      gauss->GaussVertex(in);
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+
+      IssmDouble current_levelset;
+      levelset_input->GetInputValue(&current_levelset, gauss);
+      node->ApplyConstraint(0, current_levelset);
+    }
+    delete gauss;
+  }
+}
+
+/* Compute the nondimensional crevasse stress ratio used for propagation checks in the HFB framework. */
+IssmDouble ComputeHFBCrevasseStressRatio(IssmDouble averaged_s_xx,
+                                      IssmDouble averaged_s_yy,
+                                      IssmDouble averaged_thickness,
+                                      IssmDouble rho_ice,
+                                      IssmDouble rho_seawater,
+                                      IssmDouble constant_g) {
+  IssmDouble r_it = rho_ice * constant_g * averaged_thickness *
+                    (1.0 - rho_ice / rho_seawater) / 2.0;
+  if (r_it <= 0.0)
+    return -std::numeric_limits<IssmDouble>::max();
+
+  IssmDouble r_xx = 2.0 * averaged_s_xx + averaged_s_yy;
+  return fmin(r_xx / r_it, 1.5);
+}
+
+/* Absolute LEFM opening stress used for hydrofracture checks [Pa]. */
+IssmDouble ComputeLEFMRxx(IssmDouble averaged_stress_1,
+                          IssmDouble averaged_stress_2) {
+  return 2.0 * averaged_stress_1 + averaged_stress_2;
+}
+
+void ComputePrincipalStresses2D(IssmDouble *pstress_1, IssmDouble *pstress_2,
+                                IssmDouble s_xx, IssmDouble s_yy,
+                                IssmDouble s_xy) {
+  IssmDouble mean_stress = 0.5 * (s_xx + s_yy);
+  IssmDouble radius =
+      sqrt(0.25 * (s_xx - s_yy) * (s_xx - s_yy) + s_xy * s_xy);
+
+  *pstress_1 = mean_stress + radius;
+  *pstress_2 = mean_stress - radius;
+}
+
+bool IsCriticalMeltwaterNode(const CrevasseCalvingConfig &config,
+                             const CrevasseNodalFields &fields, int lid) {
+  if (fields.floating_nodes[lid] <= 0.5)
+    return false;
+  if (fields.meltwater_mask[lid] < 0.5)
+    return false;
+  if (fields.averaged_groundingline_distance[lid] >
+      config.hydrofracture_min_ocean_levelset)
+    return false;
+
+  IssmDouble r_xx = ComputeLEFMRxx(
+      fields.averaged_principal_stress_1[lid],
+      fields.averaged_principal_stress_2[lid]);
+
+  return r_xx >= config.critical_stress;
+}
+
+/* Store the instantaneous hydrofracture prediction as a P1 input so users can
+ * request it as an output. The prediction is deliberately the local criterion
+ * only: floating ice, meltwater_mask == 1, and r_xx >= critical_stress.
+ * It does not include front-connectivity propagation or minimum-iceberg-size
+ * filtering, so it exposes the raw hydrofracture susceptibility mask. */
+void StoreHydrofracturePredictionInput(FemModel *femmodel,
+                                       const CrevasseCalvingConfig &config,
+                                       const CrevasseNodalFields &fields) {
+  int numvertices = femmodel->vertices->NumberOfVertices();
+  int numvertices_local = femmodel->vertices->NumberOfVerticesLocal();
+  Vector<IssmDouble> *prediction =
+      new Vector<IssmDouble>(numvertices_local, numvertices);
+
+  _printf0_("\texecuting hydrofracture prediction check\n");
+
+  int local_predicted_nodes = 0;
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+
+    if (IsCriticalMeltwaterNode(config, fields, node->Lid()))
+      local_predicted_nodes++;
+  }
+
+  int global_predicted_nodes = 0;
+  ISSM_MPI_Allreduce(&local_predicted_nodes, &global_predicted_nodes, 1,
+                     ISSM_MPI_INT, ISSM_MPI_SUM, IssmComm::GetComm());
+  _printf0_("\tchecking hydrofracture criterion: "
+            << global_predicted_nodes
+            << " floating meltwater nodes satisfy r_xx >= "
+            << config.critical_stress
+            << " Pa and signed grounding-line distance <= "
+            << config.hydrofracture_min_ocean_levelset << " m\n");
+
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes = element->GetNumberOfNodes();
+
+    for (int in = 0; in < numnodes; in++) {
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+
+      IssmDouble predicted =
+          IsCriticalMeltwaterNode(config, fields, node->Lid())
+              ? 1.0
+              : 0.0;
+      prediction->SetValue(element->vertices[in]->Pid(), predicted, INS_VAL);
+    }
+  }
+
+  prediction->Assemble();
+  InputUpdateFromVectorx(femmodel, prediction, HydrofracturePredictedEnum,
+                         VertexPIdEnum);
+  delete prediction;
+}
+
+/* Store the regularized weak-ice mask. This mask is consumed by material
+ * routines as a local multiplier on rheology B, which keeps hydrofractured
+ * regions mechanically weak without creating interior no-ice holes in the
+ * active mesh. */
+void StoreHydrofractureWeakIceInput(FemModel *femmodel,
+                                    const IssmDouble *weak_nodes) {
+  int numvertices = femmodel->vertices->NumberOfVertices();
+  int numvertices_local = femmodel->vertices->NumberOfVerticesLocal();
+  Vector<IssmDouble> *weak =
+      new Vector<IssmDouble>(numvertices_local, numvertices);
+
+  int local_weak_nodes = 0;
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+    if (weak_nodes && weak_nodes[node->Lid()] > 0.5)
+      local_weak_nodes++;
+  }
+
+  int global_weak_nodes = 0;
+  ISSM_MPI_Allreduce(&local_weak_nodes, &global_weak_nodes, 1, ISSM_MPI_INT,
+                     ISSM_MPI_SUM, IssmComm::GetComm());
+  _printf0_("\thydrofracture weak-ice nodes = " << global_weak_nodes << "\n");
+
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes = element->GetNumberOfNodes();
+
+    for (int in = 0; in < numnodes; in++) {
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+
+      IssmDouble weak_value =
+          (weak_nodes && weak_nodes[node->Lid()] > 0.5) ? 1.0 : 0.0;
+      weak->SetValue(element->vertices[in]->Pid(), weak_value, INS_VAL);
+    }
+  }
+
+  weak->Assemble();
+  InputUpdateFromVectorx(femmodel, weak, HydrofractureWeakIceEnum,
+                         VertexPIdEnum);
+  delete weak;
+}
+
+/* Release temporary nodal arrays assembled for crevasse propagation. */
+void CleanupCrevasseNodalFields(CrevasseNodalFields *fields) {
+  xDelete<IssmDouble>(fields->averaged_principal_stress_1);
+  xDelete<IssmDouble>(fields->averaged_principal_stress_2);
+  xDelete<IssmDouble>(fields->averaged_thickness);
+  xDelete<IssmDouble>(fields->averaged_groundingline_distance);
+  xDelete<IssmDouble>(fields->floating_nodes);
+  xDelete<IssmDouble>(fields->seed_nodes);
+  xDelete<IssmDouble>(fields->meltwater_mask);
+  xDelete<IssmDouble>(fields->node_x);
+}
+
+/* Recompute a signed distance-to-grounding-line field from the current ocean
+ * level-set sign. MaskOceanLevelset is updated by grounding-line migration as
+ * a flotation criterion, so its magnitude is not a persistent distance in
+ * meters. The hydrofracture buffer must therefore use this derived distance,
+ * not the raw MaskOceanLevelset value. */
+void PrepareHydrofractureGroundinglineDistance(FemModel *femmodel) {
+  InputDuplicatex(femmodel, MaskOceanLevelsetEnum, DistanceToGroundinglineEnum);
+  femmodel->DistanceToFieldValue(MaskOceanLevelsetEnum, 0.,
+                                 DistanceToGroundinglineEnum);
+}
+
+/* Assemble nodal stress, thickness, flotation, grounding-line distance, and
+ * seed-front fields for calving propagation. */
+void BuildCrevasseNodalFields(FemModel *femmodel, CrevasseNodalFields *fields) {
+  int numnodes = femmodel->nodes->NumberOfNodes();
+  int localmasters = femmodel->nodes->NumberOfNodesLocal();
+  int localsize = femmodel->nodes->NumberOfNodesLocalAll();
+
+  Vector<IssmDouble> *vec_principal_stress_1 =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_principal_stress_2 =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_thickness =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_groundingline_distance =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_count =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_floating =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_seed = new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_meltwater_mask =
+      new Vector<IssmDouble>(localmasters, numnodes);
+  Vector<IssmDouble> *vec_x = new Vector<IssmDouble>(localmasters, numnodes);
+
+  IssmDouble local_ice_front_x = std::numeric_limits<IssmDouble>::max();
+
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    if (!element->IsIceInElement())
+      continue;
+
+    int numnodes_element = element->GetNumberOfNodes();
+    Input *s_xx_input = element->GetInput(DeviatoricStressxxEnum);
+    Input *s_yy_input = element->GetInput(DeviatoricStressyyEnum);
+    Input *s_xy_input = element->GetInput(DeviatoricStressxyEnum);
+    Input *thickness_input = element->GetInput(ThicknessEnum);
+    Input *ice_levelset_input = element->GetInput(MaskIceLevelsetEnum);
+    Input *ocean_levelset_input = element->GetInput(MaskOceanLevelsetEnum);
+    Input *groundingline_distance_input =
+        element->GetInput(DistanceToGroundinglineEnum);
+    Input *meltwater_mask_input = element->GetInput(CalvingMeltwaterMaskEnum);
+    _assert_(s_xx_input);
+    _assert_(s_yy_input);
+    _assert_(s_xy_input);
+    _assert_(thickness_input);
+    _assert_(ice_levelset_input);
+    _assert_(ocean_levelset_input);
+    _assert_(groundingline_distance_input);
+    _assert_(meltwater_mask_input);
+
+    Gauss *gauss = element->NewGauss();
+    bool is_icefront = element->IsIcefront();
+
+    for (int in = 0; in < numnodes_element; in++) {
+      gauss->GaussVertex(in);
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+
+      IssmDouble s_xx, s_yy, s_xy, thickness, ice_levelset, ocean_levelset,
+                 groundingline_distance, meltwater_mask, principal_stress_1,
+                 principal_stress_2;
+      s_xx_input->GetInputValue(&s_xx, gauss);
+      s_yy_input->GetInputValue(&s_yy, gauss);
+      s_xy_input->GetInputValue(&s_xy, gauss);
+      thickness_input->GetInputValue(&thickness, gauss);
+      ice_levelset_input->GetInputValue(&ice_levelset, gauss);
+      ocean_levelset_input->GetInputValue(&ocean_levelset, gauss);
+      groundingline_distance_input->GetInputValue(&groundingline_distance,
+                                                  gauss);
+      meltwater_mask_input->GetInputValue(&meltwater_mask, gauss);
+
+      ComputePrincipalStresses2D(&principal_stress_1, &principal_stress_2,
+                                 s_xx, s_yy, s_xy);
+
+      vec_principal_stress_1->SetValue(node->Pid(), principal_stress_1,
+                                       ADD_VAL);
+      vec_principal_stress_2->SetValue(node->Pid(), principal_stress_2,
+                                       ADD_VAL);
+      vec_thickness->SetValue(node->Pid(), thickness, ADD_VAL);
+      vec_groundingline_distance->SetValue(node->Pid(),
+                                           groundingline_distance, ADD_VAL);
+      vec_meltwater_mask->SetValue(node->Pid(), meltwater_mask, ADD_VAL);
+      vec_count->SetValue(node->Pid(), 1.0, ADD_VAL);
+      vec_x->SetValue(node->Pid(), element->vertices[in]->x, INS_VAL);
+
+      if (ice_levelset <= 0.0 && ocean_levelset < 0.0) {
+        vec_floating->SetValue(node->Pid(), 1.0, INS_VAL);
+        if (is_icefront) {
+          vec_seed->SetValue(node->Pid(), 1.0, INS_VAL);
+          local_ice_front_x = fmin(local_ice_front_x, element->vertices[in]->x);
+        }
+      }
+    }
+    delete gauss;
+  }
+
+  vec_principal_stress_1->Assemble();
+  vec_principal_stress_2->Assemble();
+  vec_thickness->Assemble();
+  vec_groundingline_distance->Assemble();
+  vec_count->Assemble();
+  vec_floating->Assemble();
+  vec_seed->Assemble();
+  vec_meltwater_mask->Assemble();
+  vec_x->Assemble();
+
+  IssmDouble *local_count = NULL;
+  femmodel->GetLocalVectorWithClonesNodes(&fields->averaged_principal_stress_1,
+                                          vec_principal_stress_1);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->averaged_principal_stress_2,
+                                          vec_principal_stress_2);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->averaged_thickness,
+                                          vec_thickness);
+  femmodel->GetLocalVectorWithClonesNodes(
+      &fields->averaged_groundingline_distance, vec_groundingline_distance);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->floating_nodes, vec_floating);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->seed_nodes, vec_seed);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->meltwater_mask,
+                                          vec_meltwater_mask);
+  femmodel->GetLocalVectorWithClonesNodes(&fields->node_x, vec_x);
+  femmodel->GetLocalVectorWithClonesNodes(&local_count, vec_count);
+
+  for (int i = 0; i < localsize; i++) {
+    if (local_count[i] > 0.0) {
+      fields->averaged_principal_stress_1[i] /= local_count[i];
+      fields->averaged_principal_stress_2[i] /= local_count[i];
+      fields->averaged_thickness[i] /= local_count[i];
+      fields->averaged_groundingline_distance[i] /= local_count[i];
+      fields->meltwater_mask[i] /= local_count[i];
+    }
+  }
+
+  ISSM_MPI_Allreduce(&local_ice_front_x, &fields->ice_front_x, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
+
+  xDelete<IssmDouble>(local_count);
+  delete vec_principal_stress_1;
+  delete vec_principal_stress_2;
+  delete vec_thickness;
+  delete vec_groundingline_distance;
+  delete vec_count;
+  delete vec_floating;
+  delete vec_seed;
+  delete vec_meltwater_mask;
+  delete vec_x;
+}
+
+/* Flood-fill the floating critical region starting from the current ice-front seed nodes. */
+void PropagateCriticalCrevasseRegion(FemModel *femmodel,
+                                     const CrevasseCalvingConfig &config,
+                                     const CrevasseNodalFields &fields,
+                                     CrevassePropagationResult *result) {
+  int numnodes = femmodel->nodes->NumberOfNodes();
+  int localmasters = femmodel->nodes->NumberOfNodesLocal();
+  int localsize = femmodel->nodes->NumberOfNodesLocalAll();
+  _printf0_("\texecuting hydrofracture propagation checks from ice front\n");
+
+  Vector<IssmDouble> *vec_propagated =
+      new Vector<IssmDouble>(localmasters, numnodes);
+
+  /* Seed the propagation with the present ice-front nodes. The region grown
+   * below is therefore the connected floating patch that can be reached from
+   * the current terminus while satisfying the crevasse criterion. */
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes_element = element->GetNumberOfNodes();
+    for (int in = 0; in < numnodes_element; in++) {
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+      if (fields.seed_nodes[node->Lid()] > 0.5)
+        vec_propagated->SetValue(node->Pid(), 1.0, INS_VAL);
+    }
+  }
+
+  vec_propagated->Assemble();
+  femmodel->GetLocalVectorWithClonesNodes(&result->propagated_nodes,
+                                          vec_propagated);
+
+  int global_new = 1;
+  while (global_new > 0) {
+    /* Snapshot of the propagated mask at the beginning of this sweep.
+     * previous[i] > 0.5 means node i was already part of the connected
+     * critical region before any new nodes are added in the current pass.
+     * previous[i] <= 0.5 means node i is still outside that region.
+     *
+     * Keeping this frozen copy prevents one sweep from chaining through
+     * several neighbors at once; instead, the region grows one edge-neighbor
+     * layer per iteration and then synchronizes across MPI ranks. */
+    std::vector<IssmDouble> previous(result->propagated_nodes,
+                                     result->propagated_nodes + localsize);
+
+    /* Examine fully icy triangles and test whether the propagated region
+     * should spread across any of their edges. */
+    for (Object *&object : femmodel->elements->objects) {
+      Element *element = xDynamicCast<Element *>(object);
+      if (!element->IsIceInElement())
+        continue;
+
+      int numnodes_element = element->GetNumberOfNodes();
+      _assert_(numnodes_element == 3);
+
+      IssmDouble ls[3];
+      element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
+      int nrice = 0;
+      for (int i = 0; i < 3; i++) {
+        if (ls[i] < 0.)
+          nrice++;
+      }
+      if (nrice < 3)
+        continue;
+
+      static const int edge_pairs[3][2] = {{0, 1}, {1, 2}, {2, 0}};
+      for (int edge = 0; edge < 3; edge++) {
+        int from = edge_pairs[edge][0];
+        int to = edge_pairs[edge][1];
+
+        Node *from_node = element->GetNode(from);
+        Node *to_node = element->GetNode(to);
+        if (from_node->IsActive() && to_node->IsActive()) {
+          int from_lid = from_node->Lid();
+          int to_lid = to_node->Lid();
+
+          /* Edge direction 1: grow from "from" to "to". This branch is taken
+           * only when the from-node was already in the propagated region at the
+           * start of the sweep and the to-node was not. If the to-node is
+           * floating and its local stress state exceeds the critical stress, the
+           * calving region spreads across this edge and marks the to-node. */
+          if (previous[from_lid] > 0.5 && previous[to_lid] <= 0.5 &&
+              IsCriticalMeltwaterNode(config, fields, to_lid)) {
+              vec_propagated->SetValue(to_node->Pid(), 1.0, INS_VAL);
+          }
+
+          /* Edge direction 2: same test in the opposite orientation. The edge
+           * list has an arbitrary local ordering, but the propagation itself is
+           * undirected: if either endpoint was previously marked and the other
+           * satisfies the flotation and stress checks, the region should spread
+           * across that edge. The two branches simply cover both possible
+           * orderings of the same edge. */
+          if (previous[to_lid] > 0.5 && previous[from_lid] <= 0.5 &&
+              IsCriticalMeltwaterNode(config, fields, from_lid)) {
+              vec_propagated->SetValue(from_node->Pid(), 1.0, INS_VAL);
+          }
+        }
+      }
+    }
+
+    vec_propagated->Assemble();
+    xDelete<IssmDouble>(result->propagated_nodes);
+    femmodel->GetLocalVectorWithClonesNodes(&result->propagated_nodes,
+                                            vec_propagated);
+
+    /* Stop once no rank contributes any newly marked nodes, meaning the
+     * connected critical region has reached its final extent. */
+    int local_new = 0;
+    for (int i = 0; i < localsize; i++) {
+      if (result->propagated_nodes[i] > 0.5 && previous[i] <= 0.5)
+        local_new++;
+    }
+
+    ISSM_MPI_Allreduce(&local_new, &global_new, 1, ISSM_MPI_INT,
+                       ISSM_MPI_SUM, IssmComm::GetComm());
+    if (global_new > 0)
+      result->has_critical_region = true;
+  }
+
+  delete vec_propagated;
+}
+
+/* Directly mark all floating nodes that satisfy the gated LEFM criterion. */
+void MarkCriticalMeltwaterNodes(FemModel *femmodel,
+                                const CrevasseCalvingConfig &config,
+                                const CrevasseNodalFields &fields,
+                                CrevassePropagationResult *result) {
+  int numnodes = femmodel->nodes->NumberOfNodes();
+  int localmasters = femmodel->nodes->NumberOfNodesLocal();
+  int localsize = femmodel->nodes->NumberOfNodesLocalAll();
+
+  Vector<IssmDouble> *vec_marked =
+      new Vector<IssmDouble>(localmasters, numnodes);
+
+  _printf0_("\texecuting hydrofracture checks on all floating ice\n");
+
+  for (Object *&object : femmodel->nodes->objects) {
+    Node *node = xDynamicCast<Node *>(object);
+    if (node->IsClone())
+      continue;
+
+    int lid = node->Lid();
+    if (IsCriticalMeltwaterNode(config, fields, lid)) {
+      vec_marked->SetValue(node->Pid(), 1.0, INS_VAL);
+    }
+  }
+
+  vec_marked->Assemble();
+  xDelete<IssmDouble>(result->propagated_nodes);
+  femmodel->GetLocalVectorWithClonesNodes(&result->propagated_nodes,
+                                          vec_marked);
+
+  xDelete<IssmDouble>(result->applied_nodes);
+  result->applied_nodes = xNew<IssmDouble>(localsize);
+  for (int i = 0; i < localsize; i++)
+    result->applied_nodes[i] = result->propagated_nodes[i];
+
+  result->has_critical_region =
+      CountMarkedMasterNodes(femmodel, result->propagated_nodes) > 0;
+
+  delete vec_marked;
+}
+
+/* Diagnose the inland extent and area of the fully propagated floating calving region. */
+void ComputePropagatedRegionDiagnostics(FemModel *femmodel,
+                                        const CrevasseNodalFields &fields,
+                                        CrevassePropagationResult *result) {
+  IssmDouble local_min_x = std::numeric_limits<IssmDouble>::max();
+  IssmDouble local_area = 0.0;
+
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes_element = element->GetNumberOfNodes();
+    _assert_(numnodes_element == 3);
+
+    bool all_propagated = true;
+    bool all_floating = true;
+    for (int in = 0; in < numnodes_element; in++) {
+      Node *node = element->GetNode(in);
+      if (!node->IsActive()) {
+        all_propagated = false;
+        all_floating = false;
+        continue;
+      }
+
+      int lid = node->Lid();
+      if (result->propagated_nodes[lid] <= 0.5)
+        all_propagated = false;
+      if (fields.floating_nodes[lid] <= 0.5)
+        all_floating = false;
+      if (result->propagated_nodes[lid] > 0.5)
+        local_min_x = fmin(local_min_x, fields.node_x[lid]);
+    }
+
+    if (all_propagated && all_floating) {
+      IssmDouble x1 = element->vertices[0]->x;
+      IssmDouble y1 = element->vertices[0]->y;
+      IssmDouble x2 = element->vertices[1]->x;
+      IssmDouble y2 = element->vertices[1]->y;
+      IssmDouble x3 = element->vertices[2]->x;
+      IssmDouble y3 = element->vertices[2]->y;
+      local_area +=
+          0.5 * fabs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+    }
+  }
+
+  ISSM_MPI_Allreduce(&local_min_x, &result->propagated_min_x, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
+  ISSM_MPI_Allreduce(&local_area, &result->propagated_area, 1,
+                     ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
+}
+
+/* Apply level-set SPCs that remove the propagated calving region during the current solve. */
+void ApplyPropagatedRegionConstraints(FemModel *femmodel,
+                                      const CrevasseCalvingConfig &config,
+                                      const CrevasseNodalFields &fields,
+                                      const CrevassePropagationResult &result) {
+  for (Object *&object : femmodel->elements->objects) {
+    Element *element = xDynamicCast<Element *>(object);
+    int numnodes = element->GetNumberOfNodes();
+    Gauss *gauss = element->NewGauss();
+    Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);
+    _assert_(levelset_input);
+
+    for (int in = 0; in < numnodes; in++) {
+      gauss->GaussVertex(in);
+      Node *node = element->GetNode(in);
+      if (!node->IsActive())
+        continue;
+      if (HasStaticLevelsetSpc(element, in, gauss))
+        continue;
+
+      int lid = node->Lid();
+      if (result.applied_nodes && result.applied_nodes[lid] > 0.5) {
+        node->ApplyConstraint(0, kCalvedLevelsetValue);
+      } else if (!config.advect_icefront && fields.seed_nodes[lid] > 0.5) {
+        IssmDouble current_levelset;
+        levelset_input->GetInputValue(&current_levelset, gauss);
+        node->ApplyConstraint(0, current_levelset);
+      } else {
+        node->DofInFSet(0);
+      }
+    }
+    delete gauss;
+  }
+}
+
+} // namespace
 
 void LevelsetAnalysis::CreateConstraints(Constraints *constraints,
                                          IoModel *iomodel) { /*{{{*/
@@ -193,6 +1056,12 @@ void LevelsetAnalysis::UpdateElements(Elements *elements, Inputs *inputs,
   case CalvingCrevasseDepthEnum:
     iomodel->FetchDataToInput(inputs, elements, "md.calving.water_height",
                               WaterheightEnum);
+    iomodel->FetchDataToInput(inputs, elements, "md.calving.meltwater_mask",
+                              CalvingMeltwaterMaskEnum);
+    iomodel->ConstantToInput(inputs, elements, 0.,
+                             HydrofracturePredictedEnum, P1Enum);
+    iomodel->ConstantToInput(inputs, elements, 0.,
+                             HydrofractureWeakIceEnum, P1Enum);
     iomodel->ConstantToInput(inputs, elements, 0., CalvingratexEnum, P1Enum);
     iomodel->ConstantToInput(inputs, elements, 0., CalvingrateyEnum, P1Enum);
     break;
@@ -308,14 +1177,30 @@ void LevelsetAnalysis::UpdateParameters(Parameters *parameters,
     parameters->AddObject(iomodel->CopyConstantObject(
         "md.calving.crevasse_opening_stress", CalvingCrevasseDepthEnum));
     parameters->AddObject(iomodel->CopyConstantObject(
-        "md.calving.crevasse_threshold", CalvingCrevasseThresholdEnum));
+        "md.calving.critical_stress", CalvingCriticalStressEnum));
     parameters->AddObject(iomodel->CopyConstantObject(
         "md.calving.timescale", CrevasseDepthCalvingTimescaleEnum));
     parameters->AddObject(iomodel->CopyConstantObject(
         "md.calving.min_iceberg_size", CalvingMinIcebergSizeEnum));
     parameters->AddObject(iomodel->CopyConstantObject(
         "md.calving.advect_icefront", CalvingAdvectIcefrontEnum));
-    // Initialize last calving time to 0
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.propagate_from_front", CalvingPropagateFromFrontEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.remove_only_marked", CalvingRemoveOnlyMarkedEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.hydrofracture_stabilization",
+        CalvingHydrofractureStabilizationEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.hydrofracture_weakening_factor",
+        CalvingHydrofractureWeakeningFactorEnum));
+    parameters->AddObject(iomodel->CopyConstantObject(
+        "md.calving.hydrofracture_min_ocean_levelset",
+        CalvingHydrofractureMinOceanLevelsetEnum));
+    /* Initialize the scheduled calving clock. The runtime calving routine
+     * resets this to md.timestepping.start_time before the first check so
+     * restarted/nonzero-start transients calve exactly one timescale after
+     * their own start time instead of being measured from model year zero. */
     parameters->AddObject(new DoubleParam(LastCalvingTimeEnum, 0.0));
     // Initialize calving occurred flag to 0
     parameters->AddObject(new DoubleParam(CalvingOccurredEnum, 0.0));
@@ -1129,463 +2014,226 @@ void LevelsetAnalysis::UpdateConstraints(FemModel *femmodel) { /*{{{*/
       delete gauss;
     }
   } else if (calvinglaw == CalvingCrevasseDepthEnum) {
-    /*Intermediaries*/
-    IssmDouble MAX_ICEBERG_SIZE = 10e3;
-    IssmDouble crevassedepth, crevassedepth_avg;
-    IssmDouble bed, surface_crevasse, thickness, surface, distance;
-    IssmDouble K, avg_K;
-    IssmDouble levelset, ocean_levelset;
-    IssmDouble s_xx, s_yy, rxx, rxx_avg, rxxIT, s_xx_avg, s_yy_avg;
-    IssmDouble max_distance = 0.0;
-    IssmDouble *constraint_nodes = NULL;
-    IssmDouble time, time_step;
-    bool advect_icefront;
+    CrevasseCalvingConfig config;
+    femmodel->parameters->FindParam(&config.time_yr, TimeEnum);
+	    femmodel->parameters->FindParam(&config.dt_yr,
+	                                    TimesteppingTimeStepEnum);
+    IssmDouble start_time_yr;
+    femmodel->parameters->FindParam(&start_time_yr, TimesteppingStartTimeEnum);
+	    config.time_yr /= yts;
+	    config.dt_yr /= yts;
+    start_time_yr /= yts;
+	    config.min_iceberg_size = femmodel->parameters->FindParam(CalvingMinIcebergSizeEnum);
+	    config.critical_stress = femmodel->parameters->FindParam(CalvingCriticalStressEnum);
 
-    femmodel->parameters->FindParam(&time, TimeEnum);
-    femmodel->parameters->FindParam(&time_step, TimesteppingTimeStepEnum);
+      config.timescale_yr = 0.0;
+    if (femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum))
+      femmodel->parameters->FindParam(&config.timescale_yr,
+                                      CrevasseDepthCalvingTimescaleEnum);
+    if (femmodel->parameters->Exist(CalvingAdvectIcefrontEnum))
+      femmodel->parameters->FindParam(&config.advect_icefront,
+                                      CalvingAdvectIcefrontEnum);
+    else
+      config.advect_icefront = true;
+    if (femmodel->parameters->Exist(CalvingPropagateFromFrontEnum))
+      femmodel->parameters->FindParam(&config.propagate_from_front,
+                                      CalvingPropagateFromFrontEnum);
+    else
+      config.propagate_from_front = true;
+    if (femmodel->parameters->Exist(CalvingRemoveOnlyMarkedEnum))
+      femmodel->parameters->FindParam(&config.remove_only_marked,
+                                      CalvingRemoveOnlyMarkedEnum);
+    else
+      config.remove_only_marked = false;
+    if (femmodel->parameters->Exist(CalvingHydrofractureStabilizationEnum))
+      femmodel->parameters->FindParam(&config.hydrofracture_stabilization,
+                                      CalvingHydrofractureStabilizationEnum);
+    else
+      config.hydrofracture_stabilization = false;
+    if (femmodel->parameters->Exist(CalvingHydrofractureWeakeningFactorEnum))
+      femmodel->parameters->FindParam(&config.hydrofracture_weakening_factor,
+                                      CalvingHydrofractureWeakeningFactorEnum);
+    else
+      config.hydrofracture_weakening_factor = 1.e-3;
+    if (femmodel->parameters->Exist(CalvingHydrofractureMinOceanLevelsetEnum))
+      femmodel->parameters->FindParam(&config.hydrofracture_min_ocean_levelset,
+                                      CalvingHydrofractureMinOceanLevelsetEnum);
+    else
+      config.hydrofracture_min_ocean_levelset = 0.0;
 
-    time = time / yts; // Convert from seconds to year
-    time_step = time_step / yts;
-
-    // Get the last time the algorithm checked for calving
     IssmDouble last_calving_time = 0.0;
-    IssmDouble calving_timescale = 0.0;
-
-    // read the last calving time if it exists
     if (femmodel->parameters->Exist(LastCalvingTimeEnum)) {
       femmodel->parameters->FindParam(&last_calving_time, LastCalvingTimeEnum);
-    } else {
-      femmodel->parameters->AddObject(
-          new DoubleParam(LastCalvingTimeEnum, 0.0));
-    }
-
-    // get the calving time scale
-    if (femmodel->parameters->Exist(CrevasseDepthCalvingTimescaleEnum)) {
-      femmodel->parameters->FindParam(&calving_timescale,
-                                      CrevasseDepthCalvingTimescaleEnum);
-    }
-    // cout << "Calving timescale= " << calving_timescale << endl;
-
-    // Check if we should perform calving based on timescale
-    bool perform_calving = false;
-    IssmDouble min_iceberg_size =
-        femmodel->parameters->FindParam(CalvingMinIcebergSizeEnum);
-
-    // Get advect_icefront parameter (default to true if not found for backwards
-    // compatibility)
-    if (femmodel->parameters->Exist(CalvingAdvectIcefrontEnum)) {
-      femmodel->parameters->FindParam(&advect_icefront,
-                                      CalvingAdvectIcefrontEnum);
-      // advect_icefront = (advect_icefront_int != 0);
-    } else {
-      advect_icefront = true; // default to true
-    }
-
-    /* Prevent ice front advection if advect_icefront is false by constraining
-     * all ice front nodes */
-    if (!advect_icefront) {
-      for (Object *&object : femmodel->elements->objects) {
-        Element *element = xDynamicCast<Element *>(object);
-        if (!element->IsIcefront())
-          continue;
-
-        int numnodes = element->GetNumberOfNodes();
-        Input *levelset_input = element->GetInput(MaskIceLevelsetEnum);
-        _assert_(levelset_input);
-        Gauss *gauss = element->NewGauss();
-
-        for (int in = 0; in < numnodes; in++) {
-          gauss->GaussNode(element->GetElementType(), in);
-          Node *node = element->GetNode(in);
-          if (!node->IsActive())
-            continue;
-
-          // Get current levelset value at this node
-          IssmDouble current_levelset;
-          levelset_input->GetInputValue(&current_levelset, gauss);
-
-          // Constrain ice front node to its current levelset value (prevents
-          // advection)
-          node->ApplyConstraint(0, current_levelset);
-        }
-        delete gauss;
+      if (last_calving_time < start_time_yr) {
+        last_calving_time = start_time_yr;
+        femmodel->parameters->SetParam(last_calving_time, LastCalvingTimeEnum);
       }
+    } else {
+      last_calving_time = start_time_yr;
+      femmodel->parameters->AddObject(new DoubleParam(LastCalvingTimeEnum,
+                                                      last_calving_time));
     }
+
+    bool perform_calving = false;
+    IssmDouble scheduled_calving_time = config.time_yr;
+    if (!config.advect_icefront)
+      FreezeIceFrontAdvectionIfNeeded(femmodel);
 
     _printf0_("   Crevasse Depth Calving"
-              << " (timescale=" << calving_timescale << "yrs, "
-              << "min. iceberg size=" << min_iceberg_size / 1000 << "km)"
-              << ":\n");
+	              << " (timescale=" << config.timescale_yr << "yrs, "
+	              << "min. iceberg size=" << config.min_iceberg_size / 1000
+	              << "km, critical stress=" << config.critical_stress / 1000
+	              << "kPa, propagate from front=" << config.propagate_from_front
+	              << ", remove only marked=" << config.remove_only_marked
+	              << ", stabilization=" << config.hydrofracture_stabilization
+	              << ", weakening factor="
+	              << config.hydrofracture_weakening_factor
+	              << ", min ocean levelset="
+	              << config.hydrofracture_min_ocean_levelset
+	              << ")"
+	              << ":\n");
+    _printf0_("[LevelsetAnalysis] :: Using LEFM-style crevasse propagation with locally computed r_xx and prescribed critical stress.\n");
+    _printf0_("\tstart time=" << start_time_yr << " yr\n");
     _printf0_("\tlast check time=" << last_calving_time << " yr\n");
-    _printf0_("\tcurrent time=" << time << " yr\n");
-    _printf0_("\ttime step=" << time_step << " yr\n");
-    if (calving_timescale <= 0.0)
-      // If timescale is 0 or negative, perform calving every timestep (original
-      // behavior)
+    _printf0_("\tcurrent time=" << config.time_yr << " yr\n");
+    _printf0_("\ttime step=" << config.dt_yr << " yr\n");
+
+    if (config.timescale_yr <= 0.0) {
       perform_calving = true;
-    else if (time - last_calving_time >= calving_timescale)
-      // If the calving timescale has elapsed, perform calving
-      perform_calving = true;
-    int step;
-    femmodel->parameters->FindParam(&step, StepEnum);
-    // No calving on the first iteration (in the case that we are restarting the
-    // transient from another one)
-    if (step == 1) {
-      femmodel->parameters->SetParam(time - time_step, LastCalvingTimeEnum);
-      return;
-    }
-
-    // Skip calving if the time isn't right yet
-    // Only clear constraints and return early if advect_icefront is enabled
-    if (!perform_calving) {
-      /* Clear dynamic calving constraints from previous events, but preserve
-       static SPCs Static SPCs are identified by having a non-NaN value in
-       spclevelset input */
-      if (advect_icefront) {
-        for (Object *&object : femmodel->elements->objects) {
-          Element *element = xDynamicCast<Element *>(object);
-          int numnodes = element->GetNumberOfNodes();
-
-          // Check if this element has static SPC data
-          Input *spc_input = element->GetInput(SpcLevelsetEnum);
-
-          for (int in = 0; in < numnodes; in++) {
-            Node *node = element->GetNode(in);
-            if (!node->IsActive())
-              continue;
-
-            // Only clear constraint if this node doesn't have a static SPC
-            if (spc_input) {
-              Gauss *gauss = element->NewGauss();
-              gauss->GaussNode(element->GetElementType(), in);
-              IssmDouble spc_value;
-              spc_input->GetInputValue(&spc_value, gauss);
-              delete gauss;
-
-              // If spc_value is NaN, this node has no static SPC, so clear the
-              // constraint
-              if (xIsNan<IssmDouble>(spc_value)) {
-                node->DofInFSet(0);
-              }
-              // Otherwise, keep the static SPC constraint
-            } else {
-              // No SPC input exists, safe to clear all constraints
-              node->DofInFSet(0);
-            }
-          }
-        }
+    } else {
+      IssmDouble elapsed_since_check = config.time_yr - last_calving_time;
+      IssmDouble schedule_tolerance =
+          1.e-12 * fmax(1.0, fabs(config.time_yr));
+      if (elapsed_since_check + schedule_tolerance >= config.timescale_yr) {
+        IssmDouble intervals_elapsed =
+            floor((elapsed_since_check + schedule_tolerance) /
+                  config.timescale_yr);
+        intervals_elapsed = fmax(1.0, intervals_elapsed);
+        scheduled_calving_time =
+            last_calving_time + intervals_elapsed * config.timescale_yr;
+        perform_calving = true;
       }
-      /* comment this line out if we want the algorithm to output min_x
-         and aflipped at each time step */
+    }
+
+    if (!perform_calving) {
+      CrevasseNodalFields nodal_fields;
+      PrepareHydrofractureGroundinglineDistance(femmodel);
+      BuildCrevasseNodalFields(femmodel, &nodal_fields);
+      StoreHydrofracturePredictionInput(femmodel, config, nodal_fields);
+      CleanupCrevasseNodalFields(&nodal_fields);
+
+      if (config.advect_icefront)
+        ClearDynamicLevelsetConstraintsPreservingStaticSpc(femmodel);
       return;
     }
 
-    // Check for calving (doesn't necessarily happen) at regular intervals
-    femmodel->parameters->SetParam(time, LastCalvingTimeEnum);
+    femmodel->parameters->SetParam(scheduled_calving_time,
+                                   LastCalvingTimeEnum);
 
-    /*Get the DistanceToCalvingfront*/
+    PrepareHydrofractureGroundinglineDistance(femmodel);
     InputDuplicatex(femmodel, MaskIceLevelsetEnum, DistanceToCalvingfrontEnum);
     femmodel->DistanceToFieldValue(MaskIceLevelsetEnum, 0,
                                    DistanceToCalvingfrontEnum);
 
-    /*Vector of size number of nodes*/
-    int numvertices = femmodel->vertices->NumberOfVertices();
-    int localvertices = femmodel->vertices->NumberOfVerticesLocal();
-    int numnodes = femmodel->nodes->NumberOfNodes();
-    int localmasters = femmodel->nodes->NumberOfNodesLocal();
-    int localsize = femmodel->nodes->NumberOfNodesLocalAll();
-    Vector<IssmDouble> *vec_constraint_nodes = vec_constraint_nodes =
-        new Vector<IssmDouble>(localmasters, numnodes);
+    CrevasseNodalFields nodal_fields;
+    BuildCrevasseNodalFields(femmodel, &nodal_fields);
+    StoreHydrofracturePredictionInput(femmodel, config, nodal_fields);
 
-    IssmDouble crevasse_threshold =
-        femmodel->parameters->FindParam(CalvingCrevasseThresholdEnum);
-
-    /* ===== AVERAGE DEVIATORIC STRESSES OVER THE MESH TO REFELCT THE FINAL OUTPUT ===== */
-    IssmDouble *averaged_s_xx = NULL;
-    IssmDouble *averaged_s_yy = NULL;
-
-    /* Create parallel vectors. These vectors should be accessed with node->Pid() */
-    Vector<IssmDouble> *vec_s_xx = vec_s_xx = new Vector<IssmDouble>(localmasters, numnodes);
-    Vector<IssmDouble> *vec_s_yy = vec_s_yy = new Vector<IssmDouble>(localmasters, numnodes);
-    Vector<IssmDouble> *vec_count = vec_count = new Vector<IssmDouble>(localmasters, numnodes);
-
-    /* Mimic the behavior of ResultToVector() for stress components */
-    for (Object *&object : femmodel->elements->objects) {
-		Element *element = xDynamicCast<Element *>(object);
-		Input *s_xx_input = element->GetInput(DeviatoricStressxxEnum); _assert_(s_xx_input);
-        Input *s_xy_input = element->GetInput(DeviatoricStressxyEnum); _assert_(s_xy_input);
-        Input *s_yy_input = element->GetInput(DeviatoricStressyyEnum); _assert_(s_yy_input);
-		int elt_num_nodes = element->GetNumberOfNodes();
-      	Gauss *gauss = element->NewGauss();
-
-		if (!element->IsIceInElement()) continue;
-
-		for(int i=0; i<elt_num_nodes; i++) {
-			gauss->GaussVertex(i);
-        	Node *node = element->GetNode(i);
-
-          	if (!node->IsActive()) continue;
-
-			// Only process floating nodes
-			s_xx_input->GetInputValue(&s_xx, gauss);
-			s_yy_input->GetInputValue(&s_yy, gauss);
-
-			// add stresses to the vectors 
-			vec_s_xx->SetValue(node->Pid(), s_xx, ADD_VAL);
-			vec_s_yy->SetValue(node->Pid(), s_yy, ADD_VAL);
-			vec_count->SetValue(node->Pid(), 1.0, ADD_VAL);
-		}
-
-    }
-
-    vec_s_xx->Assemble(); vec_s_yy->Assemble(); vec_count->Assemble();
-
-    /* Get local vectors, these local vectors should be indexed with node->Lid() */
-    IssmDouble *local_count = NULL;
-    femmodel->GetLocalVectorWithClonesNodes(&averaged_s_xx, vec_s_xx);
-    femmodel->GetLocalVectorWithClonesNodes(&averaged_s_yy, vec_s_yy);
-    femmodel->GetLocalVectorWithClonesNodes(&local_count, vec_count);
-
-    // Divide by count to get average
-    for (int i = 0; i < localsize; i++) {
-      if (local_count[i] > 0.0) {
-        averaged_s_xx[i] /= local_count[i];
-        averaged_s_yy[i] /= local_count[i];
-      }
-    }
-
-    // Clean up
-    delete vec_s_xx; delete vec_s_yy; delete vec_count;
-    xDelete<IssmDouble>(local_count);
-
-    /* Find all elements that are on the ice front. (may not be needed in the future) */
-    IssmDouble local_ice_front_area = 0;
-    IssmDouble local_ice_front_x = 2e11;
-    IssmDouble ice_front_area = 0;
-    IssmDouble ice_front_x = 1e10;
-    for (Object *&object : femmodel->elements->objects) {
-      Element *element = xDynamicCast<Element *>(object);
-      int numnodes = element->GetNumberOfNodes();
-      Gauss *gauss = element->NewGauss();
-
-      Input *thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
-      Input *surface_input = element->GetInput(SurfaceEnum); _assert_(surface_input);
-      Input *buttressing_k_input = element->GetInput(ButtressingKEnum); _assert_(buttressing_k_input);
-      Input *ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input);
-
-      if (element->IsIcefront()) {
-        for (int in = 0; in < numnodes; in++) {
-          gauss->GaussVertex(in);
-          Node *node = element->GetNode(in);
-
-          if (!node->IsActive()) continue;
-
-          // Only process floating nodes
-          ocean_input->GetInputValue(&ocean_levelset, gauss);
-          if (ocean_levelset >= 0.) continue;
-
-          // mark the node as one to be potentially calved
-          vec_constraint_nodes->SetValue(node->Pid(), 1.0, INS_VAL);
-        }
-        delete gauss;
-
-        /* Include element in ice front area calculation regardless of its
-         * stress value */
-        IssmDouble x1 = element->vertices[0]->x;
-        IssmDouble y1 = element->vertices[0]->y;
-        IssmDouble x2 = element->vertices[1]->x;
-        IssmDouble y2 = element->vertices[1]->y;
-        IssmDouble x3 = element->vertices[2]->x;
-        IssmDouble y3 = element->vertices[2]->y;
-		
-        local_ice_front_area +=
-            0.5 * fabs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)));
-        local_ice_front_x = fmin(fmin(x1, x2), x3);
-      }
-    }
-    // _printf0_("\tlocal_ice_front_x=" << local_ice_front_x/1000 <<"km\n");
-
-    ISSM_MPI_Allreduce(&local_ice_front_area, &ice_front_area, 1, ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
-    ISSM_MPI_Allreduce(&local_ice_front_x, &ice_front_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-    vec_constraint_nodes->Assemble();
-    femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes, vec_constraint_nodes);
-
-    /* Look for all nodes that are above the HFB calving threshold */
-    int nflipped = 1;
-    IssmDouble ls[3];
-
-	IssmDouble local_min_x, local_weighted_sum_x, local_sum_ratio, local_aflipped;
-	IssmDouble stress_ratio, stress_ratio_avg;
-	IssmDouble num_nodes, rho_ice, rho_seawater, constant_g;
-    IssmDouble global_min_x = 2e11;
-    IssmDouble weighted_average_x = -1.e+20;
-
-    while (nflipped) {
-      int local_nflipped = 0;
-      local_aflipped = 0.0; // Area of all elements flipped
-      local_min_x = global_min_x;
-      local_weighted_sum_x = 0.0;
-      local_sum_ratio = 0.0;
-
-      for (Object *&object : femmodel->elements->objects) {
-        Element *element = xDynamicCast<Element *>(object);
-		
-        if (!element->IsIceInElement()) continue;
-
-        numnodes = element->GetNumberOfNodes();
-
-		Input *ocean_input = element->GetInput(MaskOceanLevelsetEnum); _assert_(ocean_input);
-        Input *levelset_input = element->GetInput(DistanceToCalvingfrontEnum); _assert_(levelset_input);
-        Input *thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
-        Input *s_xx_input = element->GetInput(DeviatoricStressxxEnum); _assert_(s_xx_input);
-        Input *s_yy_input = element->GetInput(DeviatoricStressyyEnum); _assert_(s_yy_input);
-
-        rho_ice = element->FindParam(MaterialsRhoIceEnum);
-        rho_seawater = element->FindParam(MaterialsRhoSeawaterEnum);
-        constant_g = element->FindParam(ConstantsGEnum);
-
-        /* Skip elements on the ice front */
-        element->GetInputListOnVertices(&ls[0], MaskIceLevelsetEnum);
-        int nrice = 0;
-        for (int i = 0; i < 3; i++) {
-          if (ls[i] < 0.) nrice++;
-        }
-        if (nrice < 3) continue;
-
-        /* Is this element connected to a node that should be calved? */
-        bool isconnected = true; // Ignore the connectivity criterion for now 
-
-        /* Check stress if connected */
-        Gauss *gauss = element->NewGauss();
-        bool is_critical = false;
-        for (int in = 0; in < numnodes; in++) {
-			gauss->GaussVertex(in);
-			Node *node = element->GetNode(in);
-			if (!node->IsActive()) continue;
-			if (ls[in] > 0) continue;
-
-			ocean_input->GetInputValue(&ocean_levelset, gauss);
-			if (ocean_levelset >= 0.) continue;
-
-			thickness_input->GetInputValue(&thickness, gauss);
-			levelset_input->GetInputValue(&distance, gauss); // note this distance is SIGNED!
-			s_xx_input->GetInputValue(&s_xx, gauss);
-			s_yy_input->GetInputValue(&s_yy, gauss);
-			s_xx_avg = averaged_s_xx[node->Lid()];
-			s_yy_avg = averaged_s_yy[node->Lid()];
-
-			rxx     = 2*s_xx+s_yy;
-			rxx_avg = 2 * s_xx_avg + s_yy_avg;
-			rxxIT   = rho_ice * constant_g * thickness * (1 - rho_ice / rho_seawater) / 2;
-
-			/* 11/21/2025 ceil the ratio at 1.5 for interpretatbility */
-			stress_ratio     = fmin(rxx / rxxIT, 1.5); 
-			stress_ratio_avg = fmin(rxx_avg / rxxIT, 1.5);
-
-			/* mark the node for calving if it is beyond critical calving stress */
-			if (stress_ratio_avg >= crevasse_threshold && constraint_nodes[node->Lid()] == 0.) { // && fabs(distance) <= MAX_ICEBERG_SIZE) {
-				local_nflipped++;
-				local_weighted_sum_x += element->vertices[in]->x * stress_ratio_avg;
-				local_sum_ratio += stress_ratio_avg;
-				vec_constraint_nodes->SetValue(node->Pid(), 1.0, INS_VAL);
-				if (element->vertices[in]->x < local_min_x) {
-					local_min_x = element->vertices[in]->x;
-					/* PRINT STATEMENTS FOR DEBUGGING */
-					//   cout << "\t--------------- found super critical element -------------------\n";
-					//   cout << "\t\tElement ID: " << element->id << ", Vertex index: " << in << "\n";
-					//   cout << "\t\ticelevelset = " << distance / 1000 << "km\n";
-					//   cout << "\t\tx = " << element->vertices[in]->x / 1000 << "km, y = " << element->vertices[in]->y / 1000 << "km.\n";
-					//   cout << "\t\tH = " << thickness << "m.\n";
-					//   cout << "\t\tsxx       = " << s_xx / 1000 << ", syy       = " << s_yy / 1000 << "\n";
-					//   cout << "\t\tsxx (avg) = " << s_xx_avg / 1000 << ", syy (avg) = " << s_yy_avg / 1000 << "\n";
-					//   cout << "\t\trxx/rxxIT       = " << (2 * s_xx + s_yy) / rxxIT << "\n";
-					//   cout << "\t\trxx/rxxIT (avg) =" << (2 * s_xx_avg + s_yy_avg) / rxxIT <<"\n";
-					//   cout << "\t\tcd=" << crevassedepth << ".\n";
-				}
-			}
-        }
-        delete gauss;
-      }
-      ISSM_MPI_Allreduce(&local_nflipped, &nflipped, 1, ISSM_MPI_INT, ISSM_MPI_SUM, IssmComm::GetComm());
-      ISSM_MPI_Allreduce(&local_min_x, &global_min_x, 1, ISSM_MPI_DOUBLE, ISSM_MPI_MIN, IssmComm::GetComm());
-
-      IssmDouble global_weighted_sum_x = 0.0;
-      IssmDouble global_sum_ratio = 0.0;
-      ISSM_MPI_Allreduce(&local_weighted_sum_x, &global_weighted_sum_x, 1,
-                         ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
-      ISSM_MPI_Allreduce(&local_sum_ratio, &global_sum_ratio, 1,
-                         ISSM_MPI_DOUBLE, ISSM_MPI_SUM, IssmComm::GetComm());
-
-      if (global_sum_ratio > 0.0) weighted_average_x = global_weighted_sum_x / global_sum_ratio;
-
-      /* update the local constrain_nodes vector */
-      vec_constraint_nodes->Assemble(); xDelete<IssmDouble>(constraint_nodes);
-      femmodel->GetLocalVectorWithClonesNodes(&constraint_nodes, vec_constraint_nodes);
-    }
-    delete vec_constraint_nodes;
-
-    femmodel->parameters->SetParam(global_min_x, CalvingPropagatedMinXEnum);
-    _printf0_("\tice front          = " << ice_front_x / 1000 << "km.\n");
-	_printf0_("\tweighted average x = " << weighted_average_x / 1000 << "km, calve="<< ((ice_front_x-weighted_average_x)>=min_iceberg_size) << "\n");
-    _printf0_("\tcritical x-coord   = " << global_min_x / 1000 << "km, calve="<< ((ice_front_x-global_min_x)>=min_iceberg_size) << "\n");
-
-    /* Apply the calving calculation to the ice levelset, if applicable */
-    if (fabs(ice_front_x - weighted_average_x) >= min_iceberg_size &&
-        ice_front_x > weighted_average_x &&
-		weighted_average_x>0 && 
-        perform_calving) { // minimum iceberg size threshold
-                           // (parameter-controlled)
-      for (Object *&object : femmodel->elements->objects) {
-        Element *element = xDynamicCast<Element *>(object);
-        int numnodes = element->GetNumberOfNodes();
-        Gauss *gauss = element->NewGauss();
-        // Check if this element has static SPC data
-        Input *spc_input = element->GetInput(SpcLevelsetEnum);
-
-        /*Potentially constrain nodes of this element*/
-        for (int in = 0; in < numnodes; in++) {
-          // gauss->GaussNode(element->GetElementType(),in);
-          gauss->GaussVertex(in);
-          Node *node = element->GetNode(in);
-          if (!node->IsActive())
-            continue;
-
-          // Check if this node has a static SPC that should be preserved
-          bool has_static_spc = false;
-          if (spc_input) {
-            IssmDouble spc_value;
-            spc_input->GetInputValue(&spc_value, gauss);
-            if (!xIsNan<IssmDouble>(spc_value)) {
-              has_static_spc = true;
-            }
-          }
-
-          // Only apply/clear dynamic calving constraints if no static SPC exists
-          if (!has_static_spc) {
-            int vertex_index = in;
-            if (element->vertices[vertex_index]->x >= weighted_average_x) {
-              node->ApplyConstraint(0, +1.);
-            } else {
-              /* no ice, set no spc */
-              node->DofInFSet(0);
-            }
-          }
-          // If static SPC exists, leave it unchanged
-        }
-        delete gauss;
-      }
-      // Set flag to trigger AMR (in progress)
-      femmodel->parameters->SetParam(1.0, CalvingOccurredEnum);
-      _printf0_("\tExecuted calving.\n");
+    CrevassePropagationResult propagation;
+    if (config.propagate_from_front) {
+      PropagateCriticalCrevasseRegion(femmodel, config, nodal_fields,
+                                      &propagation);
     } else {
-      // Reset flag - no calving this timestep
+      MarkCriticalMeltwaterNodes(femmodel, config, nodal_fields,
+                                 &propagation);
+    }
+    ComputePropagatedRegionDiagnostics(femmodel, nodal_fields, &propagation);
+    if (config.propagate_from_front && !config.remove_only_marked)
+      BuildAppliedCalvingMask(femmodel, nodal_fields, &propagation);
+    else if (config.propagate_from_front && config.remove_only_marked) {
+      int localsize = femmodel->nodes->NumberOfNodesLocalAll();
+      xDelete<IssmDouble>(propagation.applied_nodes);
+      propagation.applied_nodes = xNew<IssmDouble>(localsize);
+      for (int i = 0; i < localsize; i++)
+        propagation.applied_nodes[i] = propagation.propagated_nodes[i];
+    }
+    CrevasseStressDiagnostics stress_diagnostics =
+        ComputeCrevasseStressDiagnostics(femmodel, nodal_fields, propagation);
+
+    bool has_front_extent =
+        nodal_fields.ice_front_x < std::numeric_limits<IssmDouble>::max() &&
+        propagation.propagated_min_x < std::numeric_limits<IssmDouble>::max();
+    bool meets_size_threshold =
+        !config.propagate_from_front ||
+        (has_front_extent &&
+         nodal_fields.ice_front_x > propagation.propagated_min_x &&
+         (nodal_fields.ice_front_x - propagation.propagated_min_x >=
+          config.min_iceberg_size));
+
+    femmodel->parameters->SetParam(propagation.propagated_min_x,
+                                   CalvingPropagatedMinXEnum);
+    femmodel->parameters->SetParam(propagation.propagated_area,
+                                   CalvingPropagatedAreaEnum);
+
+    int total_nodes = femmodel->nodes->NumberOfNodes();
+    int marked_nodes =
+        meets_size_threshold
+            ? CountMarkedMasterNodes(femmodel, propagation.applied_nodes)
+            : 0;
+    IssmDouble removed_area =
+        meets_size_threshold ? propagation.propagated_area : 0.0;
+
+    if (nodal_fields.ice_front_x < std::numeric_limits<IssmDouble>::max())
+      _printf0_("\tice front          = "
+                << nodal_fields.ice_front_x / 1000 << "km.\n");
+    else
+      _printf0_("\tice front          = n/a\n");
+
+    if (propagation.propagated_min_x < std::numeric_limits<IssmDouble>::max())
+      _printf0_("\tpropagated min x   = "
+                << propagation.propagated_min_x / 1000
+                << "km\n");
+    else
+      _printf0_("\tpropagated min x   = n/a\n");
+    _printf0_("\tstress-connected region = "
+              << propagation.has_critical_region << "\n");
+    _printf0_("\tsize criterion met = " << meets_size_threshold << "\n");
+    _printf0_("\tmarked nodes       = " << marked_nodes << "/"
+              << total_nodes << "\n");
+    _printf0_("\tremoved area       = " << removed_area / 1.e6
+              << "km^2.\n");
+    PrintCrevasseStressSummary("seed nodes", stress_diagnostics.seed);
+    PrintCrevasseStressSummary("floating nodes", stress_diagnostics.floating);
+    PrintCrevasseStressSummary("propagated", stress_diagnostics.propagated);
+    _printf0_("\tcalving occurred   = "
+              << (propagation.has_critical_region && meets_size_threshold)
+              << "\n");
+
+    if (propagation.has_critical_region && meets_size_threshold) {
+      if (config.hydrofracture_stabilization) {
+        StoreHydrofractureWeakIceInput(femmodel, propagation.applied_nodes);
+        if (config.advect_icefront)
+          ClearDynamicLevelsetConstraintsPreservingStaticSpc(femmodel);
+        femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
+        _printf0_("\tRegularized hydrofracture as weak ice; no level-set removal executed.\n");
+      } else {
+        StoreHydrofractureWeakIceInput(femmodel, NULL);
+        ApplyPropagatedRegionConstraints(femmodel, config, nodal_fields,
+                                         propagation);
+        femmodel->parameters->SetParam(1.0, CalvingOccurredEnum);
+        _printf0_("\tExecuted calving.\n");
+      }
+    } else {
+      StoreHydrofractureWeakIceInput(femmodel, NULL);
+      if (config.advect_icefront)
+        ClearDynamicLevelsetConstraintsPreservingStaticSpc(femmodel);
       femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
       _printf0_("\tDid not execute calving.\n");
     }
 
-    xDelete<IssmDouble>(averaged_s_xx);
-    xDelete<IssmDouble>(averaged_s_yy);
-    xDelete<IssmDouble>(constraint_nodes);
+    CleanupCrevasseNodalFields(&nodal_fields);
+    xDelete<IssmDouble>(propagation.applied_nodes);
+    xDelete<IssmDouble>(propagation.propagated_nodes);
   }
 
   /*Default, do nothing*/
