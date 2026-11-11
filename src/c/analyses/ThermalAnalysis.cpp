@@ -2,6 +2,7 @@
 #include "../toolkits/toolkits.h"
 #include "../classes/classes.h"
 #include "../shared/shared.h"
+#include "../classes/Inputs/DatasetInput.h"
 #include "../modules/modules.h"
 
 /*Model processing*/
@@ -107,6 +108,9 @@ void ThermalAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoModel* 
 
 	int basalforcing_model,materialstype;
 
+	bool ismasstransport;
+	iomodel->FindConstant(&ismasstransport,"md.transient.ismasstransport");
+
 	/*Now, is the model 3d? otherwise, do nothing: */
 	if(iomodel->domaintype==Domain2DhorizontalEnum)return;
 
@@ -184,6 +188,44 @@ void ThermalAnalysis::UpdateElements(Elements* elements,Inputs* inputs,IoModel* 
 
 	/*Friction*/
 	FrictionUpdateInputs(elements, inputs, iomodel);
+
+	if (ismasstransport) return; 
+
+	if (basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+		_printf0_("DEBUG ThermalAnalysis: Reading in ocean temperature and salinity input from melt parametrization\n");
+
+		/*Deal with ocean_temperature and ocean_salinity...*/
+		IssmDouble* array2d = NULL; int M,N,K; IssmDouble* temp = NULL;
+		iomodel->FetchData(&temp,&M,&K,"md.basalforcings.tf_depths"); xDelete<IssmDouble>(temp);
+		//_assert_(M==1); _assert_(K>=1);
+		int num_depths = max(M,K);
+
+		_printf0_("DEBUG ThermalAnalysis: Fetching ocean_temperature and ocean_salinity\n");
+		for(int kk=0;kk<num_depths;kk++){
+
+			/*Fetch Ocean Temperature for this depth*/
+			iomodel->FetchData(&array2d, &M, &N, kk, "md.basalforcings.ocean_temperature");
+			if(!array2d) _error_("md.basalforcings.ocean_temperature not found in binary file");
+			for(Object* & object : elements->objects){
+				Element*  element = xDynamicCast<Element*>(object);
+				if(!element->IsOnBase()) continue;
+				element->DatasetInputAdd(BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum,array2d,inputs,iomodel,M,N,1,BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum,kk);
+			}
+
+			/*Fetch Ocean Salinity for this depth*/
+			iomodel->FetchData(&array2d, &M, &N, kk, "md.basalforcings.ocean_salinity");
+			if(!array2d) _error_("md.basalforcings.ocean_salinity not found in binary file");
+			for(Object* & object : elements->objects){
+				Element*  element = xDynamicCast<Element*>(object);
+				if(!element->IsOnBase()) continue;
+				element->DatasetInputAdd(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum,array2d,inputs,iomodel,M,N,1,BasalforcingsIsmip6ExplicitOceanSalinityInputEnum,kk);
+				}
+			xDelete<IssmDouble>(array2d);
+		}
+		_printf0_("DEBUG ThermalAnalysis: successfully loaded ISMIP6 Explicit Ocean Temperature and Salinity for all depths\n");
+		
+	}
+
 }/*}}}*/
 void ThermalAnalysis::UpdateParameters(Parameters* parameters,IoModel* iomodel,int solution_enum,int analysis_enum){/*{{{*/
 
@@ -526,7 +568,7 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	IssmDouble*    basis = xNew<IssmDouble>(numnodes);
 
 	/*Retrieve all inputs and parameters*/
-	element->GetVerticesCoordinatesBase(&xyz_list_base);
+	element->GetVerticesCoordinates(&xyz_list_base);
 	element->FindParam(&dt,TimesteppingTimeStepEnum);
 	Input*      pressure_input=element->GetInput(PressureEnum); _assert_(pressure_input);
 	IssmDouble  gravity             = element->FindParam(ConstantsGEnum);
@@ -536,6 +578,52 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	IssmDouble  mixed_layer_capacity= element->FindParam(MaterialsMixedLayerCapacityEnum);
 	IssmDouble  thermal_exchange_vel= element->FindParam(MaterialsThermalExchangeVelocityEnum);
 
+	/*Intermediaries for Explicit forcing*/
+	int         num_depths,basalforcing_model;
+	IssmDouble  lambda1, lambda2, lambda3;
+	IssmDouble* tf_depths = NULL;
+	IssmDouble* tf_depths_local = NULL;
+	bool decreasing = false;
+	DatasetInput* sal_input = NULL;
+
+	element->FindParam(&basalforcing_model,BasalforcingsEnum);
+	if(basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+		// _printf0_("thermal analysis: fetching parameters from ismip6explicit parametrization\n");
+		sal_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum);
+		
+		/*Manual Serve*/
+		int* vertexlids = xNew<int>(numnodes);
+		element->GetVerticesLidList(vertexlids);
+		sal_input->Serve(numnodes,vertexlids);
+		xDelete<int>(vertexlids);
+
+		// _printf0_("\tthermal analysis: fetched salinity\n");
+		element->parameters->FindParam(&tf_depths,&num_depths,BasalforcingsIsmip6TfDepthsEnum); _assert_(tf_depths);
+		
+		/*Copy to local array to avoid modifying global parameters*/
+		tf_depths_local = xNew<IssmDouble>(num_depths);
+		xMemCpy<IssmDouble>(tf_depths_local, tf_depths, num_depths);
+
+		for(int i=0;i<num_depths;i++) tf_depths_local[i] = -tf_depths_local[i]; /*Make positive for binary search*/
+
+		decreasing = false;
+		if(num_depths > 1 && tf_depths_local[0] > tf_depths_local[num_depths-1]) decreasing = true;
+
+		if(decreasing){
+			/*Reverse array so that it is sorted increasing for binary_search*/
+			for(int i=0; i<num_depths/2; i++){
+				IssmDouble temp = tf_depths_local[i];
+				tf_depths_local[i] = tf_depths_local[num_depths-1-i];
+				tf_depths_local[num_depths-1-i] = temp;
+			}
+		}
+		// _printf0_("\tthermal analysis: made tf depths positive\n");
+		lambda1=element->FindParam(BasalforcingsIsmip6ExplicitLambda1Enum);
+		lambda2=element->FindParam(BasalforcingsIsmip6ExplicitLambda2Enum);
+		lambda3=element->FindParam(BasalforcingsIsmip6ExplicitLambda3Enum);
+		// _printf0_("\tthermal analysis: finished fetching parameters\n");
+	}
+
 	/* Start  looping on the number of gaussian points: */
 	Gauss* gauss=element->NewGaussBase(4);
 	while(gauss->next()){
@@ -543,8 +631,85 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 		element->JacobianDeterminantBase(&Jdet,xyz_list_base,gauss);
 		element->NodalFunctions(basis,gauss);
 
-		pressure_input->GetInputValue(&pressure,gauss);
-		t_pmp=element->TMeltingPoint(pressure);
+
+		if(basalforcing_model==BasalforcingsIsmip6ExplicitEnum){
+
+			// _printf0_("thermal analysis: calculating liquidus relation\n");
+
+			// _printf0_("\tthermal analysis: recovering z\n");
+			IssmDouble z = 0.;
+			for(int i=0;i<numnodes;i++) z += basis[i]*xyz_list_base[i*3+2];
+			
+			// _printf0_("\tthermal analysis: recovering depth\n");
+			IssmDouble depth = -z;
+			if(xIsNan<IssmDouble>(depth)) _error_("depth is NaN");
+			int offset;
+			int found=binary_search(&offset,depth,tf_depths_local,num_depths);
+			if(!found) _error_("depth not found");
+
+			// _printf0_("\tthermal analysis: recovering salinity\n");
+			IssmDouble sal;
+			int idx1,idx2;
+
+			if(decreasing){
+				if (offset==-1){
+					/*get values for the first depth: (which is really the last in original array)*/
+					_assert_(depth<=tf_depths_local[0]); 
+					idx1 = num_depths - 1 - 0;
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					idx1 = num_depths - 1 - (num_depths-1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble sal1,sal2;
+
+					idx1 = num_depths - 1 - offset;
+					idx2 = num_depths - 1 - (offset+1);
+
+					sal_input->GetInputValue(&sal1,gauss,idx1);
+					sal_input->GetInputValue(&sal2,gauss,idx2);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
+			}
+			else{
+				if (offset==-1){
+					/*get values for the first depth: */
+					_assert_(depth<=tf_depths_local[0]);
+					sal_input->GetInputValue(&sal,gauss,0);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					sal_input->GetInputValue(&sal,gauss,num_depths-1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble sal1,sal2;
+					sal_input->GetInputValue(&sal1,gauss,offset);
+					sal_input->GetInputValue(&sal2,gauss,offset+1);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
+			}
+			t_pmp=lambda1*sal + lambda2 + lambda3*z + 273.0;
+			// _printf0_("\t t_pmp = " << t_pmp << "K \n");
+		}
+		else{
+			pressure_input->GetInputValue(&pressure,gauss);
+			t_pmp=element->TMeltingPoint(pressure);
+		}
 
 		scalar_ocean=gauss->weight*Jdet*rho_water*mixed_layer_capacity*thermal_exchange_vel*(t_pmp)/(heatcapacity*rho_ice);
 		if(reCast<bool,IssmDouble>(dt)) scalar_ocean=dt*scalar_ocean;
@@ -553,6 +718,8 @@ ElementVector* ThermalAnalysis::CreatePVectorShelf(Element* element){/*{{{*/
 	}
 
 	/*Clean up and return*/
+	/*Clean up and return*/
+	if(tf_depths_local) xDelete<IssmDouble>(tf_depths_local);
 	delete gauss;
 	xDelete<IssmDouble>(basis);
 	xDelete<IssmDouble>(xyz_list_base);

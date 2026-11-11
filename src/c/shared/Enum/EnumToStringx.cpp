@@ -86,6 +86,13 @@ const char* EnumToStringx(int en){
 		case BasalforcingsIsmip6Gamma0Enum : return "BasalforcingsIsmip6Gamma0";
 		case BasalforcingsIsmip6IsLocalEnum : return "BasalforcingsIsmip6IsLocal";
 		case BasalforcingsIsmip6NumBasinsEnum : return "BasalforcingsIsmip6NumBasins";
+		case BasalforcingsIsmip6IsSlopeEnum : return "BasalforcingsIsmip6IsSlope";
+	    case BasalforcingsIsmip6ExplicitEnum : return "BasalforcingsIsmip6Explicit";
+		case BasalforcingsIsmip6ExplicitOceanTemperatureEnum : return "BasalforcingsIsmip6ExplicitOceanTemperature";
+		case BasalforcingsIsmip6ExplicitOceanSalinityEnum : return "BasalforcingsIsmip6ExplicitOceanSalinity";
+		case BasalforcingsIsmip6ExplicitLambda1Enum : return "BasalforcingsIsmip6ExplicitLambda1";
+		case BasalforcingsIsmip6ExplicitLambda2Enum : return "BasalforcingsIsmip6ExplicitLambda2";
+		case BasalforcingsIsmip6ExplicitLambda3Enum : return "BasalforcingsIsmip6ExplicitLambda3";
 		case BasalforcingsIsmip6TfDepthsEnum : return "BasalforcingsIsmip6TfDepths";
 		case BasalforcingsLinearNumBasinsEnum : return "BasalforcingsLinearNumBasins";
 		case BasalforcingsLinearNumBreaksEnum : return "BasalforcingsLinearNumBreaks";
@@ -122,9 +129,20 @@ const char* EnumToStringx(int en){
 		case CalvingADStressThresholdGroundediceEnum : return "CalvingADStressThresholdGroundedice";
 		case CalvingCrevasseDepthEnum : return "CalvingCrevasseDepth";
 		case CalvingCrevasseThresholdEnum : return "CalvingCrevasseThreshold";
+		case CalvingCriticalStressEnum : return "CalvingCriticalStress";
 		case CalvingHeightAboveFloatationEnum : return "CalvingHeightAboveFloatation";
+		case CalvingMinIcebergSizeEnum : return "CalvingMinIcebergSize";
+		case CalvingAdvectIcefrontEnum : return "CalvingAdvectIcefront";
+		case CalvingPropagateFromFrontEnum : return "CalvingPropagateFromFront";
+		case CalvingRemoveOnlyMarkedEnum : return "CalvingRemoveOnlyMarked";
+		case CalvingHydrofractureStabilizationEnum : return "CalvingHydrofractureStabilization";
+		case CalvingHydrofractureWeakeningFactorEnum : return "CalvingHydrofractureWeakeningFactor";
+		case CalvingHydrofractureMinOceanLevelsetEnum : return "CalvingHydrofractureMinOceanLevelset";
 		case CalvingLawEnum : return "CalvingLaw";
 		case CalvingMinthicknessEnum : return "CalvingMinthickness";
+		case CalvingOccurredEnum : return "CalvingOccurred";
+		case CalvingPropagatedAreaEnum : return "CalvingPropagatedArea";
+		case CalvingPropagatedMinXEnum : return "CalvingPropagatedMinX";
 		case CalvingTestSpeedfactorEnum : return "CalvingTestSpeedfactor";
 		case CalvingTestIndependentRateEnum : return "CalvingTestIndependentRate";
 		case CalvingUseParamEnum : return "CalvingUseParam";
@@ -146,6 +164,7 @@ const char* EnumToStringx(int en){
 		case ControlInputSizeMEnum : return "ControlInputSizeM";
 		case ControlInputSizeNEnum : return "ControlInputSizeN";
 		case ControlInputInterpolationEnum : return "ControlInputInterpolation";
+		case CrevasseDepthCalvingTimescaleEnum : return "CrevasseDepthCalvingTimescale";
 		case CumBslcEnum : return "CumBslc";
 		case CumBslcIceEnum : return "CumBslcIce";
 		case CumBslcHydroEnum : return "CumBslcHydro";
@@ -347,6 +366,7 @@ const char* EnumToStringx(int en){
 		case IoConstantEnum : return "IoConstant";
 		case IvinsEnum : return "Ivins";
 		case IsSlcCouplingEnum : return "IsSlcCoupling";
+		case LastCalvingTimeEnum : return "LastCalvingTime";
 		case LevelsetKillIcebergsEnum : return "LevelsetKillIcebergs";
 		case LevelsetReinitFrequencyEnum : return "LevelsetReinitFrequency";
 		case LevelsetStabilizationEnum : return "LevelsetStabilization";
@@ -808,11 +828,13 @@ const char* EnumToStringx(int en){
 		case BedSlopeYEnum : return "BedSlopeY";
 		case BottomPressureEnum : return "BottomPressure";
 		case BottomPressureOldEnum : return "BottomPressureOld";
+		case ButtressingKEnum : return "ButtressingK";
 		case CalvingBasinIdEnum : return "CalvingBasinId";
 		case CalvingCalvingrateEnum : return "CalvingCalvingrate";
 		case CalvingHabFractionEnum : return "CalvingHabFraction";
 		case CalvingAblationrateEnum : return "CalvingAblationrate";
 		case CalvingMeltingrateEnum : return "CalvingMeltingrate";
+		case CalvingMeltwaterMaskEnum : return "CalvingMeltwaterMask";
 		case CalvingStressThresholdFloatingiceEnum : return "CalvingStressThresholdFloatingice";
 		case CalvingStressThresholdGroundediceEnum : return "CalvingStressThresholdGroundedice";
 		case CalvinglevermannCoeffEnum : return "CalvinglevermannCoeff";
@@ -822,6 +844,8 @@ const char* EnumToStringx(int en){
 		case CalvingMeltingFluxLevelsetEnum : return "CalvingMeltingFluxLevelset";
 		case ConvergedEnum : return "Converged";
 		case CrevasseDepthEnum : return "CrevasseDepth";
+		case HydrofracturePredictedEnum : return "HydrofracturePredicted";
+		case HydrofractureWeakIceEnum : return "HydrofractureWeakIce";
 		case DamageDEnum : return "DamageD";
 		case DamageDOldEnum : return "DamageDOld";
 		case DamageDbarEnum : return "DamageDbar";
@@ -848,6 +872,9 @@ const char* EnumToStringx(int en){
 		case DeviatoricStresszzEnum : return "DeviatoricStresszz";
 		case DeviatoricStress1Enum : return "DeviatoricStress1";
 		case DeviatoricStress2Enum : return "DeviatoricStress2";
+		case DeviatoricStressxxAvgEnum : return "DeviatoricStressxxAvg";
+		case DeviatoricStressyyAvgEnum : return "DeviatoricStressyyAvg";
+		case DeviatoricStressxyAvgEnum : return "DeviatoricStressxyAvg";
 		case DistanceToCalvingfrontEnum : return "DistanceToCalvingfront";
 		case DistanceToGroundinglineEnum : return "DistanceToGroundingline";
 		case Domain2DhorizontalEnum : return "Domain2Dhorizontal";
@@ -973,6 +1000,7 @@ const char* EnumToStringx(int en){
 		case MaskOceanLevelsetEnum : return "MaskOceanLevelset";
 		case MaskIceLevelsetEnum : return "MaskIceLevelset";
 		case MaskIceRefLevelsetEnum : return "MaskIceRefLevelset";
+		case SpcLevelsetEnum : return "SpcLevelset";
 		case MasstransportSpcthicknessEnum : return "MasstransportSpcthickness";
 		case MmemasstransportThicknessEnum : return "MmemasstransportThickness";
 		case MmemasstransportMaskIceLevelsetEnum : return "MmemasstransportMaskIceLevelset";
@@ -3061,6 +3089,7 @@ const char* EnumToStringx(int en){
 		case Outputdefinition1727Enum : return "Outputdefinition1727";
 		case Outputdefinition1728Enum : return "Outputdefinition1728";
 		case Outputdefinition1729Enum : return "Outputdefinition1729";
+		case BasalforcingsIsmip6ExplicitSlopeEnum : return "BasalforcingsIsmip6ExplicitSlope";
 		case Outputdefinition1702Enum : return "Outputdefinition1702";
 		case Outputdefinition1730Enum : return "Outputdefinition1730";
 		case Outputdefinition1731Enum : return "Outputdefinition1731";
@@ -3361,6 +3390,7 @@ const char* EnumToStringx(int en){
 		case BalancethicknessSolutionEnum : return "BalancethicknessSolution";
 		case BalancevelocityAnalysisEnum : return "BalancevelocityAnalysis";
 		case BalancevelocitySolutionEnum : return "BalancevelocitySolution";
+		case BasalforcingsIdealEnum : return "BasalforcingsIdeal";
 		case BasalforcingsIsmip6Enum : return "BasalforcingsIsmip6";
 		case BasalforcingsPicoEnum : return "BasalforcingsPico";
 		case BeckmannGoosseFloatingMeltRateEnum : return "BeckmannGoosseFloatingMeltRate";
@@ -3757,6 +3787,7 @@ const char* EnumToStringx(int en){
 		case SubelementMigration4Enum : return "SubelementMigration4";
 		case TimesteppingTimeAdaptEnum : return "TimesteppingTimeAdapt";
 		case TriangleInterpEnum : return "TriangleInterp";
+		case FrictionGroundinglineCoulombDistanceEnum : return "FrictionGroundinglineCoulombDistance";
 		case MaximumNumberOfDefinitionsEnum : return "MaximumNumberOfDefinitions";
 		default : return "unknown";
 

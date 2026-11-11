@@ -97,6 +97,7 @@ class FemModel {
 		void CalvingFluxLevelsetx();
 		void CalvingMeltingFluxLevelsetx();
 		void DeviatoricStressx();
+		void AverageDeviatoricStressx();
 		void Divergencex(IssmDouble* pdiv);
 		void ElementOperationx(void (Element::*function)(void));
 		void ElementResponsex(IssmDouble* presponse,int response_enum);
@@ -140,6 +141,8 @@ class FemModel {
 		void RignotMeltParameterizationx();
 		void TotalCalvingFluxLevelsetx(IssmDouble* pGbmb, bool scaled);
 		void TotalCalvingMeltingFluxLevelsetx(IssmDouble* pGbmb, bool scaled);
+		void CalvingPropagatedAreax(IssmDouble* pArea);
+		void CalvingPropagatedMinXx(IssmDouble* pMinX);
 		void TotalFloatingBmbx(IssmDouble* pFbmb, bool scaled);
 		void TotalGroundedBmbx(IssmDouble* pGbmb, bool scaled);
 		void TotalSmbx(IssmDouble* pSmb, bool scaled);

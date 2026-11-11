@@ -106,13 +106,31 @@ void transient_core(FemModel* femmodel){/*{{{*/
 
 #if !defined(_HAVE_AD_)
 			if(save_results) femmodel->WriteMeshInResults();
-			if(step%amr_frequency==0 && time<finaltime){
-				if(VerboseSolution()) _printf0_("   refining mesh\n");
+
+			// Check if calving occurred this timestep
+			bool calving_occurred = false;
+			if(femmodel->parameters->Exist(CalvingOccurredEnum)){
+				IssmDouble calving_flag = 0.0;
+				femmodel->parameters->FindParam(&calving_flag, CalvingOccurredEnum);
+				calving_occurred = (calving_flag > 0.5);
+			}
+
+			// Refine mesh on regular frequency OR when calving occurs
+			if((step%amr_frequency==0 || calving_occurred) && time<finaltime){
+				if(VerboseSolution()){
+					if(calving_occurred) _printf0_("   refining mesh (triggered by calving)\n");
+					else _printf0_("   refining mesh (regular interval)\n");
+				}
 				femmodel->ReMesh();//Do not refine the last step
+
+				// Reset the calving flag after remeshing
+				if(calving_occurred){
+					femmodel->parameters->SetParam(0.0, CalvingOccurredEnum);
+				}
 			}
 
 #else
-			_error_("AMR not suppored with AD");
+			_error_("AMR not supported with AD");
 #endif
 		}
 

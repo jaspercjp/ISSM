@@ -158,7 +158,9 @@ class Element: public Object{
 		bool               IsOceanOnlyInElement();
 		bool		   IsAllMinThicknessInElement();
 		bool               IsLandInElement();
+		void 	           IdealFloatingiceMeltingRate(IssmDouble alpha, IssmDouble beta, IssmDouble gamma, IssmDouble m0, IssmDouble width);
 		void               Ismip6FloatingiceMeltingRate();
+		void               Ismip6ExplicitFloatingiceMeltingRate();
 		void               LapseRateBasinSMB(int numelevbins, IssmDouble* lapserates, IssmDouble* elevbins,IssmDouble* refelevation);
 		void               LinearFloatingiceMeltingRate();
 		void               SpatialLinearFloatingiceMeltingRate();

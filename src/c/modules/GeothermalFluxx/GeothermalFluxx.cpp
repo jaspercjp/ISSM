@@ -23,11 +23,18 @@ void GeothermalFluxx(FemModel* femmodel){/*{{{*/
 		case BasalforcingsIsmip6Enum:
 			/*Nothing to be done*/
 			break;
+		case BasalforcingsIsmip6ExplicitEnum:
+			/*Nothing to be done*/
+			// _printf_("GeothermalFluxx: ISMIP6 Explicit\n");
+			break;
 		case MantlePlumeGeothermalFluxEnum:
 			if(VerboseSolution())_printf0_("	call Mantle Plume Geothermal Flux module\n");
 			MantlePlumeGeothermalFluxx(femmodel);
 			break;
 		case BeckmannGoosseFloatingMeltRateEnum:
+			/*Nothing to be done*/
+			break;
+		case BasalforcingsIdealEnum:
 			/*Nothing to be done*/
 			break;
 		default:

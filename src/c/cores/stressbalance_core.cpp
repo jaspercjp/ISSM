@@ -21,7 +21,9 @@ void stressbalance_core(FemModel* femmodel){
 	bool       isSIA,isSSA,isL1L2,isMOLHO,isHO,isFS,isNitsche;
 	bool       save_results;
 	int        solution_type;
+	int        frictionlaw;
 	int        numoutputs        = 0;
+	IssmDouble groundingline_coulomb_distance;
 	char     **requested_outputs = NULL;
 	Analysis  *analysis          = NULL;
 
@@ -36,6 +38,7 @@ void stressbalance_core(FemModel* femmodel){
 	femmodel->parameters->FindParam(&isNitsche,FlowequationIsNitscheEnum);
 	femmodel->parameters->FindParam(&save_results,SaveResultsEnum);
 	femmodel->parameters->FindParam(&solution_type,SolutionTypeEnum);
+	femmodel->parameters->FindParam(&frictionlaw,FrictionLawEnum);
 	femmodel->parameters->FindParam(&numoutputs,StressbalanceNumRequestedOutputsEnum);
 	femmodel->parameters->FindParam(&control_analysis,InversionIscontrolEnum);
 	if(numoutputs) femmodel->parameters->FindParam(&requested_outputs,&numoutputs,StressbalanceRequestedOutputsEnum);
@@ -51,6 +54,17 @@ void stressbalance_core(FemModel* femmodel){
 
 		/*We need basal melt rates for the shelf dampening*/
 		bmb_core(femmodel);
+	}
+
+	/*Tsai friction can restrict its Coulomb cap to a grounding-line buffer.
+	 *MaskOceanLevelset is a sign field, so build a proper signed distance
+	 *field from the current grounding-line position before stress balance. */
+	if(frictionlaw==12){
+		femmodel->parameters->FindParam(&groundingline_coulomb_distance,FrictionGroundinglineCoulombDistanceEnum);
+		if(groundingline_coulomb_distance>0.){
+			InputDuplicatex(femmodel,MaskOceanLevelsetEnum,DistanceToGroundinglineEnum);
+			femmodel->DistanceToFieldValue(MaskOceanLevelsetEnum,0.,DistanceToGroundinglineEnum);
+		}
 	}
 
 	/*Compute SIA velocities*/

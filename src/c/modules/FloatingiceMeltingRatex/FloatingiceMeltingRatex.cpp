@@ -23,6 +23,7 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 
 	/*First, get BMB model from parameters*/
 	femmodel->parameters->FindParam(&basalforcing_model,BasalforcingsEnum);
+	if(basalforcing_model==8) basalforcing_model=BasalforcingsIsmip6ExplicitEnum;
 
 	/*branch to correct module*/
 	switch(basalforcing_model){
@@ -50,6 +51,10 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 			if(VerboseSolution())_printf0_("   call ISMIP 6 Floating melting rate module\n");
 			FloatingiceMeltingRateIsmip6x(femmodel);
 			break;
+		case BasalforcingsIsmip6ExplicitEnum:
+			if(VerboseSolution())_printf0_("   call ISMIP 6 Explicit Floating melting rate module\n");
+			FloatingiceMeltingRateIsmip6Explicitx(femmodel);
+			break;
 		case BeckmannGoosseFloatingMeltRateEnum:
 			if(VerboseSolution())_printf0_("        call BeckmannGoosse Floating melting rate module\n");
 			BeckmannGoosseFloatingiceMeltingRatex(femmodel);
@@ -58,11 +63,89 @@ void FloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 			if(VerboseSolution())_printf0_("        call Linear Floating melting rate ARMA module\n");
 			LinearFloatingiceMeltingRatearmax(femmodel);
 			break;
+		case BasalforcingsIdealEnum:
+			if(VerboseSolution())_printf0_("   call ideal melting rate module\n");
+			FloatingiceMeltingRateIdealx(femmodel);
+			break;
 		default:
 			_error_("Basal forcing model "<<EnumToStringx(basalforcing_model)<<" not supported yet");
 	}
 
 }/*}}}*/
+
+void FloatingiceMeltingRateIdealx(FemModel* femmodel) {
+	IssmDouble alpha, beta, gamma, m0, width; 
+	femmodel->parameters->FindParam(&alpha, BasalforcingsIdealAlphaEnum);
+	femmodel->parameters->FindParam(&beta, BasalforcingsIdealBetaEnum);
+	femmodel->parameters->FindParam(&gamma, BasalforcingsIdealGammaEnum);
+	femmodel->parameters->FindParam(&m0, BasalforcingsIdealM0Enum);
+	femmodel->parameters->FindParam(&width, BasalforcingsIdealWidthEnum);
+
+	InputDuplicatex(femmodel,MaskOceanLevelsetEnum,DistanceToGroundinglineEnum);
+	femmodel->DistanceToFieldValue(MaskOceanLevelsetEnum,0.,DistanceToGroundinglineEnum);
+
+	InputDuplicatex(femmodel,MaskIceLevelsetEnum,DistanceToCalvingfrontEnum);
+	femmodel->DistanceToFieldValue(MaskIceLevelsetEnum,0.,DistanceToCalvingfrontEnum);
+
+	/*Grounding-zone (seawater intrusion) melt, Poinelli et al. (2026) Eq. 2:
+	 * mb = mdot_GL*(1 - d/L) for 0 < d <= L upstream of the flotation line.
+	 * The (1 - d/L) taper and the sub-element treatment at d = L are applied by
+	 * the stock IntrusionMelt branch of MasstransportAnalysis; here we only
+	 * supply mdot_GL on the non-floating elements that reach into the band.
+	 * mdot_GL is the peak of the ideal profile,
+	 *   (m0/N) * max_x[(1 - x^alpha) x^(beta-1)],  x*^alpha = (beta-1)/(alpha+beta-1),
+	 * times the same transverse factor the floating profile uses.
+	 * Active ONLY for IntrusionMelt with intrusion_distance > 0; otherwise the
+	 * code path below is exactly the pre-existing one (zero melt on non-floating
+	 * elements).*/
+	int        melt_style;
+	IssmDouble intrusiondist = 0.;
+	femmodel->parameters->FindParam(&melt_style,GroundinglineMeltInterpolationEnum);
+	if(melt_style==IntrusionMeltEnum) femmodel->parameters->FindParam(&intrusiondist,GroundinglineIntrusionDistanceEnum);
+	bool       gz_on = (melt_style==IntrusionMeltEnum && intrusiondist>0.);
+	IssmDouble mdot_gl = 0.;
+	if(gz_on){
+		IssmDouble N = 1/beta - 1/(alpha+beta);
+		if (gamma >= 1e-3) N = N * (pow(2, gamma+1) - 1) / (gamma+1);
+		IssmDouble xa   = (beta-1)/(alpha+beta-1);           /* x*^alpha */
+		IssmDouble xs   = pow(xa, 1./alpha);                 /* x* */
+		IssmDouble fmax = (1.0 - xa) * pow(xs, beta-1);      /* pow(0,0)=1 covers beta==1 */
+		mdot_gl = (m0/N) * fmax;
+	}
+
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		int      numvertices = element->GetNumberOfVertices();
+		/*Set melt to 0 if non floating*/
+		if(!element->IsIceInElement() || !element->IsAllFloating() || !element->IsOnBase()){
+			IssmDouble* values = xNewZeroInit<IssmDouble>(numvertices);
+			if(gz_on && element->IsIceInElement() && element->IsOnBase()){
+				IssmDouble* dist_gl = xNew<IssmDouble>(numvertices);
+				element->GetInputListOnVertices(dist_gl,DistanceToGroundinglineEnum);
+				IssmDouble dmin = dist_gl[0];
+				for(int i=1;i<numvertices;i++) dmin = min(dmin,dist_gl[i]);
+				xDelete<IssmDouble>(dist_gl);
+				if(dmin<=intrusiondist){ /*element reaches into the grounding zone*/
+					IssmDouble* xyz_list = NULL;
+					element->GetVerticesCoordinates(&xyz_list);
+					for(int i=0;i<numvertices;i++){
+						IssmDouble y = xyz_list[i*3+1];
+						values[i] = mdot_gl * pow(1.0 + (y + width/2) / width, gamma);
+					}
+					xDelete<IssmDouble>(xyz_list);
+				}
+			}
+			element->AddInput(BasalforcingsFloatingiceMeltingRateEnum,values,P1DGEnum);
+			xDelete<IssmDouble>(values);
+			continue;
+		}
+	}
+
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		element->IdealFloatingiceMeltingRate(alpha,beta,gamma,m0,width);
+	}
+}
 
 void LinearFloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/
 
@@ -121,7 +204,7 @@ void FloatingiceMeltingRateIsmip6x(FemModel* femmodel){/*{{{*/
 			continue;
 		}
 
-		/*Get TF on all vertices*/
+		/*Get TF on all vertices using linear interpolation*/
 		IssmDouble*    tf_test        = xNew<IssmDouble>(numvertices);
 		IssmDouble*    depth_vertices = xNew<IssmDouble>(numvertices);
 		DatasetInput* tf_input = element->GetDatasetInput(BasalforcingsIsmip6TfEnum); _assert_(tf_input);
@@ -211,6 +294,312 @@ void FloatingiceMeltingRateIsmip6x(FemModel* femmodel){/*{{{*/
 	xDelete<IssmDouble>(areas_summed);
 	xDelete<IssmDouble>(areas_summed_cpu);
 	xDelete<IssmDouble>(tf_depths);
+}
+/*{{{*/
+void FloatingiceMeltingRateIsmip6Explicitx(FemModel* femmodel){
+
+	int         num_basins, basinid, num_depths, domaintype;
+	IssmDouble  area, tf, base, time;
+	bool        islocal;
+	IssmDouble* tf_depths = NULL;
+	IssmDouble lambda1, lambda2, lambda3;
+
+	femmodel->parameters->FindParam(&num_basins,BasalforcingsIsmip6NumBasinsEnum);
+	femmodel->parameters->FindParam(&tf_depths,&num_depths,BasalforcingsIsmip6TfDepthsEnum); _assert_(tf_depths);
+	femmodel->parameters->FindParam(&islocal,BasalforcingsIsmip6IsLocalEnum);
+	femmodel->parameters->FindParam(&lambda1,BasalforcingsIsmip6ExplicitLambda1Enum);
+	femmodel->parameters->FindParam(&lambda2,BasalforcingsIsmip6ExplicitLambda2Enum);
+	femmodel->parameters->FindParam(&lambda3,BasalforcingsIsmip6ExplicitLambda3Enum);
+	femmodel->parameters->FindParam(&time,TimeEnum);
+
+	/*Copy to local array to avoid modifying global parameters*/
+	IssmDouble* tf_depths_local = xNew<IssmDouble>(num_depths);
+	xMemCpy<IssmDouble>(tf_depths_local, tf_depths, num_depths);
+
+	/*Binary search works for vectors that are sorted in increasing order only, make depths positive*/
+	for(int i=0;i<num_depths;i++) tf_depths_local[i] = -tf_depths_local[i];
+
+	bool decreasing = false;
+	if (num_depths > 1 && tf_depths_local[0] > tf_depths_local[num_depths-1]) decreasing = true;
+
+	if(decreasing){
+		/*Reverse array so that it is sorted increasing for binary_search*/
+		for(int i=0; i<num_depths/2; i++){
+			IssmDouble temp = tf_depths_local[i];
+			tf_depths_local[i] = tf_depths_local[num_depths-1-i];
+			tf_depths_local[num_depths-1-i] = temp;
+		}
+	}
+
+	IssmDouble* tf_weighted_avg     = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* tf_weighted_avg_cpu = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* areas_summed        = xNewZeroInit<IssmDouble>(num_basins);
+	IssmDouble* areas_summed_cpu    = xNewZeroInit<IssmDouble>(num_basins);
+
+	/*Get TF at each ice shelf point - linearly intepolate in depth and time*/
+
+	/*Calculate P1-averaged slopes if requested*/
+	int isslope;
+	femmodel->parameters->FindParam(&isslope,BasalforcingsIsmip6IsSlopeEnum);
+	if(isslope){
+		_printf0_("\tcomputing P1-averaged bed slopes\n");
+		
+		int num_global_nodes = femmodel->nodes->NumberOfNodes();
+		int num_local_nodes  = femmodel->nodes->NumberOfNodesLocal();
+		
+		Vector<IssmDouble>* slope_vec = new Vector<IssmDouble>(num_local_nodes, num_global_nodes);
+		Vector<IssmDouble>* count_vec = new Vector<IssmDouble>(num_local_nodes, num_global_nodes);
+
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			if(!element->IsIceInElement() || !element->IsOnBase()) continue;
+
+			IssmDouble slopes_surface[3], slopes_thickness[3], slopes_base[3];
+			IssmDouble* xyz_list = NULL;
+			element->GetVerticesCoordinates(&xyz_list);
+			
+			Input* base_input      = element->GetInput(BaseEnum);      _assert_(base_input);
+			Input* surface_input   = element->GetInput(SurfaceEnum);   _assert_(surface_input);
+			Input* thickness_input = element->GetInput(ThicknessEnum); _assert_(thickness_input);
+
+			int numvertices = element->GetNumberOfVertices();
+			Gauss* gauss = element->NewGauss(); 
+
+			for(int i=0;i<numvertices;i++){
+				gauss->GaussVertex(i);
+				Node* node = element->GetNode(i);
+				if(!node->IsActive()) continue;
+
+				base_input->GetInputDerivativeValue(&slopes_base[0],xyz_list,gauss);
+				// surface_input->GetInputDerivativeValue(&slopes_surface[0],xyz_list,gauss);
+				// thickness_input->GetInputDerivativeValue(&slopes_thickness[0],xyz_list,gauss);
+				
+				// IssmDouble slope_x = slopes_surface[0] - slopes_thickness[0];
+				// IssmDouble slope_y = slopes_surface[1] - slopes_thickness[1];
+				// IssmDouble slope_mag = sinf(atanf(sqrt(slope_x*slope_x + slope_y*slope_y)));
+				IssmDouble slope_mag = sinf(atanf(sqrt(slopes_base[0]*slopes_base[0] + slopes_base[1]*slopes_base[1])));
+
+				slope_vec->SetValue(node->Pid(), slope_mag, ADD_VAL);
+				count_vec->SetValue(node->Pid(), 1.0, ADD_VAL);
+			}
+
+			xDelete<IssmDouble>(xyz_list);
+			delete gauss;
+		}
+
+		slope_vec->Assemble();
+		count_vec->Assemble();
+
+		IssmDouble* averaged_slope = NULL;
+		IssmDouble* local_count = NULL;
+
+		femmodel->GetLocalVectorWithClonesNodes(&averaged_slope, slope_vec);
+		femmodel->GetLocalVectorWithClonesNodes(&local_count, count_vec);
+
+		int localsize = femmodel->nodes->NumberOfNodesLocalAll(); 
+		for(int i=0;i<localsize;i++){
+			if(local_count[i] > 0.0) averaged_slope[i] /= local_count[i];
+		}
+
+		/*Distribute back to elements*/
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			int numvertices = element->GetNumberOfVertices();
+			IssmDouble* element_slopes = xNew<IssmDouble>(numvertices);
+			
+			for(int i=0;i<numvertices;i++){
+				Node* node = element->GetNode(i);
+				element_slopes[i] = averaged_slope[node->Lid()];
+			}
+			element->AddInput(BasalforcingsIsmip6ExplicitSlopeEnum, element_slopes, P1Enum);
+			
+			xDelete<IssmDouble>(element_slopes);
+		}
+
+		delete slope_vec;
+		delete count_vec;
+		xDelete<IssmDouble>(averaged_slope);
+		xDelete<IssmDouble>(local_count);
+	}
+	else{
+		/*Initialize to 0 if no slope calc*/
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			int numvertices = element->GetNumberOfVertices();
+			IssmDouble* zeros = xNewZeroInit<IssmDouble>(numvertices);
+			element->AddInput(BasalforcingsIsmip6ExplicitSlopeEnum,zeros,P1Enum);
+			xDelete<IssmDouble>(zeros);
+		}
+	}
+
+	_printf0_("\tcomputing thermal forcing at each element\n");
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		int      numvertices = element->GetNumberOfVertices();
+
+		/*Set melt to 0 if non floating*/
+		if(!element->IsIceInElement() || !element->IsAllFloating() || !element->IsOnBase()){
+			IssmDouble* values = xNewZeroInit<IssmDouble>(numvertices);
+			element->AddInput(BasalforcingsFloatingiceMeltingRateEnum,values,P1DGEnum);
+			element->AddInput(BasalforcingsIsmip6TfShelfEnum,values,P1DGEnum);
+			xDelete<IssmDouble>(values);
+			continue;
+		}
+
+		/*Get TF on all vertices using linear interpolation*/
+		IssmDouble*    tf_test        = xNew<IssmDouble>(numvertices);
+		IssmDouble*    depth_vertices = xNew<IssmDouble>(numvertices);
+		DatasetInput* temp_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanTemperatureInputEnum); _assert_(temp_input);
+		DatasetInput* sal_input = element->GetDatasetInput(BasalforcingsIsmip6ExplicitOceanSalinityInputEnum); _assert_(sal_input);
+		
+		/*If time dependent, update inputs to current time*/
+		temp_input->SetTime(time);
+		sal_input->SetTime(time);
+		
+		/*We must serve the DatasetInput manually as it is not part of the standard element inputs served in Element::Serve*/
+		int* vertexlids = xNew<int>(numvertices);
+		element->GetVerticesLidList(vertexlids);
+		temp_input->Serve(numvertices,vertexlids);
+		sal_input->Serve(numvertices,vertexlids);
+		xDelete<int>(vertexlids);
+		
+		element->GetInputListOnVertices(&depth_vertices[0],BaseEnum);
+
+		Gauss* gauss=element->NewGauss();
+		for(int iv=0;iv<numvertices;iv++){
+			gauss->GaussVertex(iv);
+
+			/*Find out where the ice shelf base is within tf_depths*/
+			IssmDouble depth = -depth_vertices[iv]; /*NOTE: make sure we are dealing with depth>0*/
+			int offset;
+			if(xIsNan<IssmDouble>(depth)) _error_("depth is NaN");
+			int found=binary_search(&offset,depth,tf_depths_local,num_depths);
+			if(!found) _error_("depth not found");
+
+			IssmDouble temp, sal;
+			int idx1, idx2;
+
+			if(decreasing){
+				if (offset==-1){
+					/*get values for the first depth: (originally last)*/
+					_assert_(depth<=tf_depths_local[0]);
+					idx1 = num_depths - 1 - 0;
+					temp_input->GetInputValue(&temp,gauss,idx1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					idx1 = num_depths - 1 - (num_depths-1);
+					temp_input->GetInputValue(&temp,gauss,idx1);
+					sal_input->GetInputValue(&sal,gauss,idx1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble temp1, temp2, sal1, sal2;
+
+					idx1 = num_depths - 1 - offset;
+					idx2 = num_depths - 1 - (offset+1);
+					
+					temp_input->GetInputValue(&temp1,gauss,idx1);
+					temp_input->GetInputValue(&temp2,gauss,idx2);
+					temp = alpha1*temp1 + alpha2*temp2;
+
+					sal_input->GetInputValue(&sal1,gauss,idx1);
+					sal_input->GetInputValue(&sal2,gauss,idx2);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
+			}
+			else{
+				if (offset==-1){
+					/*get values for the first depth: */
+					_assert_(depth<=tf_depths_local[0]);
+					temp_input->GetInputValue(&temp,gauss,0);
+					sal_input->GetInputValue(&sal,gauss,0);
+				}
+				else if(offset==num_depths-1){
+					/*get values for the last time: */
+					_assert_(depth>=tf_depths_local[num_depths-1]);
+					temp_input->GetInputValue(&temp,gauss,num_depths-1);
+					sal_input->GetInputValue(&sal,gauss,num_depths-1);
+				}
+				else {
+					/*get values between two times [offset:offset+1], Interpolate linearly*/
+					_assert_(depth>=tf_depths_local[offset] && depth<tf_depths_local[offset+1]);
+					IssmDouble deltaz=tf_depths_local[offset+1]-tf_depths_local[offset];
+					IssmDouble alpha2=(depth-tf_depths_local[offset])/deltaz;
+					IssmDouble alpha1=(1.-alpha2);
+					IssmDouble temp1, temp2, sal1, sal2;
+					
+					temp_input->GetInputValue(&temp1,gauss,offset);
+					temp_input->GetInputValue(&temp2,gauss,offset+1);
+					temp = alpha1*temp1 + alpha2*temp2;
+
+					sal_input->GetInputValue(&sal1,gauss,offset);
+					sal_input->GetInputValue(&sal2,gauss,offset+1);
+					sal = alpha1*sal1 + alpha2*sal2;
+				}
+			}
+			
+			/* Calculate TF = T - (lambda1*S + lambda2 + lambda3*z) */
+			/* depth_vertices is usually negative (elevation). */
+			tf_test[iv] = temp - (lambda1 * sal + lambda2 + lambda3 * depth_vertices[iv] + 273.0);
+		}
+
+		element->AddInput(BasalforcingsIsmip6TfShelfEnum,tf_test,P1DGEnum);
+		xDelete<IssmDouble>(tf_test);
+		xDelete<IssmDouble>(depth_vertices);
+		delete gauss;
+	}
+
+	/*Compute sums of tf*area and shelf-area per cpu*/
+	if(!islocal) {
+		for(Object* & object : femmodel->elements->objects){
+			Element* element = xDynamicCast<Element*>(object);
+			if(!element->IsOnBase() || !element->IsIceInElement() || !element->IsAllFloating()) continue;
+			/*Spawn basal element if on base to compute element area*/
+			Element* basalelement = element->SpawnBasalElement();
+			Input* tf_input=basalelement->GetInput(BasalforcingsIsmip6TfShelfEnum); _assert_(tf_input);
+			basalelement->GetInputValue(&basinid,BasalforcingsIsmip6BasinIdEnum);
+			Gauss* gauss=basalelement->NewGauss(1); gauss->GaussPoint(0);
+			tf_input->GetInputValue(&tf,gauss);
+			delete gauss;
+			area=basalelement->GetHorizontalSurfaceArea();
+			tf_weighted_avg[basinid]+=tf*area;
+			areas_summed[basinid]   +=area;
+			/*Delete spawned element if we are in 3D*/
+			basalelement->FindParam(&domaintype,DomainTypeEnum);
+			if(basalelement->IsSpawnedElement()){basalelement->DeleteMaterials(); delete basalelement;};
+		}
+
+		/*Syncronize across cpus*/
+		ISSM_MPI_Allreduce(tf_weighted_avg,tf_weighted_avg_cpu,num_basins,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
+		ISSM_MPI_Allreduce(areas_summed,areas_summed_cpu,num_basins,ISSM_MPI_DOUBLE,ISSM_MPI_SUM,IssmComm::GetComm());
+
+		/*Make sure Area is not zero to avoid dividing by 0 if a basin is not present in the model*/
+		for(int k=0;k<num_basins;k++) if(areas_summed_cpu[k]==0.) areas_summed_cpu[k] = 1.;
+
+		/*Compute weighted means and save*/
+		for(int k=0;k<num_basins;k++){tf_weighted_avg_cpu[k] = tf_weighted_avg_cpu[k]/areas_summed_cpu[k];}
+		femmodel->parameters->AddObject(new DoubleVecParam(BasalforcingsIsmip6AverageTfEnum,tf_weighted_avg_cpu,num_basins));
+	}
+
+   /*Compute meltrates*/
+	for(Object* & object : femmodel->elements->objects){
+      Element* element = xDynamicCast<Element*>(object);
+		element->Ismip6ExplicitFloatingiceMeltingRate();
+	}
+
+	/*Cleanup and return */
+	xDelete<IssmDouble>(tf_weighted_avg);
+	xDelete<IssmDouble>(tf_weighted_avg_cpu);
+	xDelete<IssmDouble>(areas_summed);
+	xDelete<IssmDouble>(areas_summed_cpu);
+	xDelete<IssmDouble>(tf_depths_local);
 }
 /*}}}*/
 void BeckmannGoosseFloatingiceMeltingRatex(FemModel* femmodel){/*{{{*/

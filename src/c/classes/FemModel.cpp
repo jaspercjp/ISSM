@@ -1192,6 +1192,82 @@ void FemModel::DeviatoricStressx(){/*{{{*/
 	}
 }
 /*}}}*/
+void FemModel::AverageDeviatoricStressx(){/*{{{*/
+
+	int numnodes = this->nodes->NumberOfNodes();
+	int localmasters = this->nodes->NumberOfNodesLocal();
+
+	// Create vectors for averaged stresses
+	Vector<IssmDouble>* vec_sxx = new Vector<IssmDouble>(localmasters, numnodes);
+	Vector<IssmDouble>* vec_syy = new Vector<IssmDouble>(localmasters, numnodes);
+	Vector<IssmDouble>* vec_sxy = new Vector<IssmDouble>(localmasters, numnodes);
+
+	// Accumulate P1DG values divided by connectivity (same as ResultToVector)
+	for(Object* & object : this->elements->objects){
+		Element* element = xDynamicCast<Element*>(object);
+
+		int numnodes_elem = element->GetNumberOfNodes();
+		int sidlist[3];
+		int connectivity[3];
+		IssmDouble sxx_values[3];
+		IssmDouble syy_values[3];
+		IssmDouble sxy_values[3];
+
+		element->GetVerticesSidList(&sidlist[0]);
+		element->GetVerticesConnectivityList(&connectivity[0]);
+		element->GetInputListOnVertices(&sxx_values[0], DeviatoricStressxxEnum);
+		element->GetInputListOnVertices(&syy_values[0], DeviatoricStressyyEnum);
+		element->GetInputListOnVertices(&sxy_values[0], DeviatoricStressxyEnum);
+
+		// Divide by connectivity and add
+		for(int i=0; i<numnodes_elem; i++){
+			vec_sxx->SetValue(sidlist[i], sxx_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+			vec_syy->SetValue(sidlist[i], syy_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+			vec_sxy->SetValue(sidlist[i], sxy_values[i]/reCast<IssmDouble>(connectivity[i]), ADD_VAL);
+		}
+	}
+
+	// Assemble across MPI ranks
+	vec_sxx->Assemble();
+	vec_syy->Assemble();
+	vec_sxy->Assemble();
+
+	// Convert to P1 inputs and add to elements
+	IssmDouble sxx[3], syy[3], sxy[3];
+	IssmDouble* sxx_serial = NULL;
+	IssmDouble* syy_serial = NULL;
+	IssmDouble* sxy_serial = NULL;
+
+	this->GetLocalVectorWithClonesNodes(&sxx_serial, vec_sxx);
+	this->GetLocalVectorWithClonesNodes(&syy_serial, vec_syy);
+	this->GetLocalVectorWithClonesNodes(&sxy_serial, vec_sxy);
+
+	for(Object* & object : this->elements->objects){
+		Element* element = xDynamicCast<Element*>(object);
+		sxx[0] = sxx_serial[element->vertices[0]->Sid()];
+		sxx[1] = sxx_serial[element->vertices[1]->Sid()];
+		sxx[2] = sxx_serial[element->vertices[2]->Sid()];
+		syy[0] = syy_serial[element->vertices[0]->Sid()];
+		syy[1] = syy_serial[element->vertices[1]->Sid()];
+		syy[2] = syy_serial[element->vertices[2]->Sid()];
+		sxy[0] = sxy_serial[element->vertices[0]->Sid()];
+		sxy[1] = sxy_serial[element->vertices[1]->Sid()];
+		sxy[2] = sxy_serial[element->vertices[2]->Sid()];
+
+		element->AddInput(DeviatoricStressxxAvgEnum, sxx, P1Enum);
+		element->AddInput(DeviatoricStressyyAvgEnum, syy, P1Enum);
+		element->AddInput(DeviatoricStressxyAvgEnum, sxy, P1Enum);
+	}
+
+	// Cleanup
+	delete vec_sxx;
+	delete vec_syy;
+	delete vec_sxy;
+	xDelete<IssmDouble>(sxx_serial);
+	xDelete<IssmDouble>(syy_serial);
+	xDelete<IssmDouble>(sxy_serial);
+}
+/*}}}*/
 void FemModel::DistanceToFieldValue(int fieldenum,IssmDouble fieldvalue,int distanceenum){/*{{{*/
 
 	/*recover my_rank:*/
@@ -2452,6 +2528,24 @@ void FemModel::RequestedOutputsx(Results **presults,char** requested_outputs, in
 					case IceMassEnum:                        this->IceMassx(&double_result,false);                  break;
 					case IcefrontMassFluxEnum:               this->IcefrontMassFluxx(&double_result,false);         break;
 					case IcefrontMassFluxLevelsetEnum:       this->IcefrontMassFluxLevelsetx(&double_result,false);         break;
+					case CalvingPropagatedAreaEnum: {
+						if(this->parameters->Exist(CalvingPropagatedAreaEnum)){
+							this->parameters->FindParam(&double_result, CalvingPropagatedAreaEnum);
+						}
+						else{
+							double_result = 0.0;
+						}
+					}
+					break;
+					case CalvingPropagatedMinXEnum: {
+						if(this->parameters->Exist(CalvingPropagatedMinXEnum)){
+							this->parameters->FindParam(&double_result, CalvingPropagatedMinXEnum);
+						}
+						else{
+							double_result = 1e20;
+						}
+					}
+					break;
 					case IceMassScaledEnum:                  this->IceMassx(&double_result,true);                   break;
 					case IceVolumeEnum:                      this->IceVolumex(&double_result,false);                break;
 					case IceVolumeScaledEnum:                this->IceVolumex(&double_result,true);                 break;
@@ -2750,6 +2844,8 @@ void FemModel::Responsex(IssmDouble* responses,int response_descriptor_enum){/*{
 		case BalancethicknessMisfitEnum:         BalancethicknessMisfitx(responses); break;
 		case TotalCalvingFluxLevelsetEnum:		  this->TotalCalvingFluxLevelsetx(responses, false); break;
 		case TotalCalvingMeltingFluxLevelsetEnum:this->TotalCalvingMeltingFluxLevelsetx(responses, false); break;
+		case CalvingPropagatedAreaEnum:          this->CalvingPropagatedAreax(responses); break;
+		case CalvingPropagatedMinXEnum:          this->CalvingPropagatedMinXx(responses); break;
 		case TotalFloatingBmbEnum:			        this->TotalFloatingBmbx(responses, false); break;
 		case TotalFloatingBmbScaledEnum:			  this->TotalFloatingBmbx(responses, true); break;
 		case TotalGroundedBmbEnum:			        this->TotalGroundedBmbx(responses, false); break;
@@ -3099,6 +3195,30 @@ void FemModel::TotalCalvingMeltingFluxLevelsetx(IssmDouble* pM, bool scaled){/*{
 
 	/*Assign output pointers: */
 	*pM=total_calving_flux;
+
+}/*}}}*/
+void FemModel::CalvingPropagatedAreax(IssmDouble* pArea){/*{{{*/
+
+	IssmDouble area = 0.0;
+
+	if(this->parameters->Exist(CalvingPropagatedAreaEnum)){
+		this->parameters->FindParam(&area, CalvingPropagatedAreaEnum);
+	}
+
+	/*Assign output pointer: */
+	*pArea = area;
+
+}/*}}}*/
+void FemModel::CalvingPropagatedMinXx(IssmDouble* pMinX){/*{{{*/
+
+	IssmDouble minx = 1e20;
+
+	if(this->parameters->Exist(CalvingPropagatedMinXEnum)){
+		this->parameters->FindParam(&minx, CalvingPropagatedMinXEnum);
+	}
+
+	/*Assign output pointer: */
+	*pMinX = minx;
 
 }/*}}}*/
 void FemModel::TotalFloatingBmbx(IssmDouble* pFbmb, bool scaled){/*{{{*/
@@ -4079,7 +4199,7 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	int analysis_index = AnalysisIndex(analysis_enum);
 
 	int numberofnodes_analysistype= this->nodes_list[analysis_index]->NumberOfNodes();
-	int dofpernode						= 2;														//vx and vy
+	int dofpernode						= 3;														//vx, vy and vz
 	int numberofcols					= dofpernode*2;										//to keep dofs and flags in the vspc vector
 	int numberofvertices				= -1;														//global, entire old mesh
 	int numberofelements				= -1;														//global, entire old mesh
@@ -4101,6 +4221,8 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	/*Get vertices coordinates of the new partition*/
 	newx=xNew<IssmDouble>(newnumberofvertices);//just the new partition
 	newy=xNew<IssmDouble>(newnumberofvertices);//just the new partition
+	IssmDouble ymin = -40000;
+	IssmDouble ymax = +40000;
 	for(int i=0;i<newnumberofvertices;i++){//just the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*Attention: no spherical coordinates*/
@@ -4127,6 +4249,11 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 			vspc->SetValue(nodeindex*numberofcols+1,spcvalue,INS_VAL);	//vy
 			vspc->SetValue(nodeindex*numberofcols+dofpernode+1,1,INS_VAL);//vyflag
 		}
+		/*vz and vz flag insertion*/
+		if(dof==2){//vz
+			vspc->SetValue(nodeindex*numberofcols+2,spcvalue,INS_VAL);	//vz
+			vspc->SetValue(nodeindex*numberofcols+dofpernode+2,1,INS_VAL);//vzflag
+		}
 	}
 
 	/*Assemble and serialize*/
@@ -4143,22 +4270,39 @@ void FemModel::CreateConstraints(Vertices* newfemmodel_vertices,int analysis_enu
 	for(int i=0;i<newnumberofvertices;i++){//just in the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*spcvx*/
-		if(!xIsNan<IssmDouble>(newspc[i*numberofcols]) && newspc[i*numberofcols+dofpernode]>(1-eps)){
+		if((fabs(vertex->GetY()-ymin)<0.1) || (fabs(vertex->GetY()-ymax)<0.1) || (fabs(vertex->GetX())<0.1)){
+			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,0,0.,analysis_enum));
+			count++;
+		}
+		else if(!xIsNan<IssmDouble>(newspc[i*numberofcols]) && newspc[i*numberofcols+dofpernode]>(1-eps)){
 			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,0,newspc[i*numberofcols],analysis_enum));
 			//add count'th spc, on node i+1, setting dof 1 to vx.
 			count++;
 		}
 	}
-	count=0;
+	
 	for(int i=0;i<newnumberofvertices;i++){//just in the new partition
 		Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
 		/*spcvy*/
-		if(!xIsNan<IssmDouble>(newspc[i*numberofcols+1]) && newspc[i*numberofcols+dofpernode+1]>(1-eps) ){
+		if((fabs(vertex->GetY()-ymin)<0.1) || (fabs(vertex->GetY()-ymax)<0.1) || (fabs(vertex->GetX())<0.1)){
+			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,1,0.,analysis_enum));
+			count++;
+		}
+		else if(!xIsNan<IssmDouble>(newspc[i*numberofcols+1]) && newspc[i*numberofcols+dofpernode+1]>(1-eps)){
 			newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,1,newspc[i*numberofcols+1],analysis_enum));
 			//add count'th spc, on node i+1, setting dof 1 to vx.
 			count++;
 		}
 	}
+	// count=0;
+	// for(int i=0;i<newnumberofvertices;i++){//just in the new partition
+	// 	Vertex* vertex=(Vertex*)newfemmodel_vertices->GetObjectByOffset(i);
+	// 	/*spcvz*/
+	// 	if((fabs(vertex->GetX())<0.1)){
+	// 		newfemmodel_constraints->AddObject(new SpcStatic(count+1,vertex->Sid()+1,2,0.,analysis_enum));
+	// 		count++;
+	// 	}
+	// }
 
 	/*Cleanup*/
 	xDelete<IssmDouble>(spc);
@@ -5611,6 +5755,13 @@ void FemModel::GethmaxVerticesFromEstimators(IssmDouble* hmaxvertices,int errore
 
 	/*Fill hmaxvertices with the criteria*/
 	for(int i=0;i<numberofelements;i++){
+
+		/*Skip if x < 50 km*/
+		v1=index[i*elementswidth+0]-1;
+		v2=index[i*elementswidth+1]-1;
+		v3=index[i*elementswidth+2]-1;
+		if((x[v1]+x[v2]+x[v3])/3. < 25000.) continue;
+
 		/*Refine any element if its error > phi*maxerror*/
 		if(error_elements[i]>threshold*maxerror){
 			/*Now, fill the hmaxvertices if requested*/

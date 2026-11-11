@@ -27,6 +27,7 @@ void Calvingx(FemModel* femmodel){
 			femmodel->StrainRateparallelx();
 			femmodel->StrainRateeffectivex();
 			femmodel->DeviatoricStressx();
+			femmodel->AverageDeviatoricStressx();
 			femmodel->ElementOperationx(&Element::CalvingCrevasseDepth);
 			break;
 		case CalvingLevermannEnum:

@@ -954,12 +954,14 @@ void Friction::GetAlpha2Tsai(IssmDouble* palpha2, Gauss* gauss){/*{{{*/
 	 * */
 
 	/*diverse: */
-	IssmDouble  C,f,m,alpha2;
+	IssmDouble  C,f,m,u0,alpha2,groundingline_coulomb_distance;
 
 	/*Recover parameters: */
 	element->GetInputValue(&f,gauss,FrictionfEnum);
 	element->GetInputValue(&C,gauss,FrictionCEnum);
 	element->GetInputValue(&m,gauss,FrictionMEnum);
+	element->parameters->FindParam(&u0,FrictionU0Enum);
+	element->parameters->FindParam(&groundingline_coulomb_distance,FrictionGroundinglineCoulombDistanceEnum);
 
 	/*Get effective pressure and velocity magnitude*/
 	IssmDouble N  = EffectivePressure(gauss);
@@ -970,11 +972,26 @@ void Friction::GetAlpha2Tsai(IssmDouble* palpha2, Gauss* gauss){/*{{{*/
 		alpha2 = 0.;
 	}
 	else{
-		alpha2= C*pow(ub,m);
-
-		if(alpha2>f*N) alpha2 = f*N;
-
-		alpha2 = alpha2/ub;
+		if(groundingline_coulomb_distance>0.){
+			IssmDouble distance_to_groundingline;
+			element->GetInputValue(&distance_to_groundingline,gauss,DistanceToGroundinglineEnum);
+			if(fabs(distance_to_groundingline)<=groundingline_coulomb_distance){
+				/*Apply no basal traction inside the grounding-line buffer. */
+				alpha2 = 0.;
+			}
+			else{
+				/*Away from the grounding line, use the same regularized
+				 * Coulomb form as frictionregcoulomb. */
+				alpha2 = (C*C*pow(ub,1./m-1.)) / pow(ub/u0 + 1.,1./m);
+			}
+		}
+		else{
+			/*Default behavior: preserve the original Tsai law, where
+			 * Coulomb failure is a domain-wide cap on the power law. */
+			alpha2= C*pow(ub,m);
+			if(alpha2>f*N) alpha2 = f*N;
+			alpha2 = alpha2/ub;
+		}
 	}
 
 	/*Assign output pointers:*/
@@ -1435,7 +1452,9 @@ void FrictionUpdateParameters(Parameters* parameters,IoModel* iomodel){/*{{{*/
 			break;
 		case 12:
 			parameters->AddObject(new IntParam(FrictionCouplingEnum,2));
+			parameters->AddObject(iomodel->CopyConstantObject("md.friction.u0",FrictionU0Enum));
 			parameters->AddObject(iomodel->CopyConstantObject("md.friction.effective_pressure_limit",FrictionEffectivePressureLimitEnum));
+			parameters->AddObject(iomodel->CopyConstantObject("md.friction.groundingline_coulomb_distance",FrictionGroundinglineCoulombDistanceEnum));
 			break;
 		case 13:
 			parameters->AddObject(iomodel->CopyConstantObject("md.friction.coupling",FrictionCouplingEnum));

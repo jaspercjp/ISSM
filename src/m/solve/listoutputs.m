@@ -81,6 +81,7 @@ BedSlopeX
 BedSlopeY
 BottomPressure
 BottomPressureOld
+ButtressingK
 CalvingBasinId
 CalvingCalvingrate
 CalvingHabFraction
@@ -93,6 +94,8 @@ Calvingratex
 Calvingratey
 CalvingFluxLevelset
 CalvingMeltingFluxLevelset
+HydrofracturePredicted
+HydrofractureWeakIce
 Converged
 CrevasseDepth
 DamageD

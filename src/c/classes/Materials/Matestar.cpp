@@ -158,6 +158,15 @@ IssmDouble Matestar::GetB(Gauss* gauss){/*{{{*/
 
 	Input* B_input = element->GetInput(MaterialsRheologyBEnum); _assert_(B_input);
 	B_input->GetInputValue(&B,gauss);
+	Input* weak_input = element->GetInput(HydrofractureWeakIceEnum);
+	if(weak_input){
+		IssmDouble weak_ice;
+		weak_input->GetInputValue(&weak_ice,gauss);
+		if(weak_ice>0.5){
+			IssmDouble weakening_factor = element->FindParam(CalvingHydrofractureWeakeningFactorEnum);
+			B *= weakening_factor;
+		}
+	}
 	return B;
 }
 /*}}}*/
@@ -168,6 +177,15 @@ IssmDouble Matestar::GetBbar(Gauss* gauss){/*{{{*/
 
 	Input* B_input = element->GetInput(MaterialsRheologyBbarEnum); _assert_(B_input);
 	B_input->GetInputValue(&Bbar,gauss);
+	Input* weak_input = element->GetInput(HydrofractureWeakIceEnum);
+	if(weak_input){
+		IssmDouble weak_ice;
+		weak_input->GetInputValue(&weak_ice,gauss);
+		if(weak_ice>0.5){
+			IssmDouble weakening_factor = element->FindParam(CalvingHydrofractureWeakeningFactorEnum);
+			Bbar *= weakening_factor;
+		}
+	}
 	return Bbar;
 }
 /*}}}*/
